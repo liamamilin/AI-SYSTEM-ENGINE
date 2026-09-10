@@ -1,0 +1,18 @@
+{
+  "chapter": "ch08-tool-calling",
+  "model": "qwen3.5:9b-mlx",
+  "dataset_version": "2026-09-09",
+  "prompt_version": "loop-system-v1",
+  "metrics": {
+    "n": 15,
+    "tool_choice_accuracy": 0.9333333333333333,
+    "args_ok_rate": 1.0,
+    "no_hallucination_rate": 1.0,
+    "answered_rate": 1.0,
+    "first_tools": {
+      "calculator": 5,
+      "get_weather": 6,
+      "None": 4
+    }
+  }
+}

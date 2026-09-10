@@ -1,0 +1,137 @@
+---
+title: "Long-running Tasks（长任务工程）"
+---
+
+## 本章要解决的问题
+
+第 33 章的架构让任务能跑了，但生产的第二天开始：Worker 升级重启——**所有 running 任务卡死**（没人知道跑到哪了）；任务跑到第 200/500 步崩了——**从零重跑**（前 199 步的白费）；用户想取消一个排队 1 小时的任务——**取消不了**（队列不支持）；一个失控任务每步都失败但无限重试——**没有人发现**。
+
+长任务的工程本质是：**把"任务"从进程的生命周期中解放出来**——进程会死、会重启、会扩缩容，任务必须活过它们。本章讲队列、worker、checkpoint/resume、cancellation 四件套的完整工程，核心资产是第 21 章的任务态 checkpoint 机制在生产语境的展开。
+
+## 学习目标
+
+完成本章后，你能够：
+
+- 设计队列语义（可见性超时/重试上限/死信队列）；
+- 实现生产级 checkpoint/resume（含幂等边界与恢复诚实性）；
+- 设计优雅停机（不杀任务的重启）；
+- 建立长任务的守护指标（卡死检测/重试风暴/积压）。
+
+## 前置知识
+
+第 21 章（checkpoint 机制）、第 33 章（Job 状态机）、第 10 章（幂等/重试）。
+
+## 问题背景
+
+### 队列语义：不只是 push/pop
+
+```text
+可见性超时（visibility timeout）：worker 取走任务后超时未确认 → 任务重新可见
+  —— 防 worker 崩溃丢任务；但要配合重试计数（无限重见 = 僵尸任务循环）
+重试上限 + 死信队列（DLQ）：失败 N 次 → 入 DLQ（人工审查），不再自动重试
+优先级与公平性：多租户下防饿死（大客户的 500 任务不能堵死小客户的 1 个）
+有序性：需要顺序的任务（同一会话）→ 分区键（按 session_id 分区）
+```
+
+### Checkpoint/Resume 的生产化
+
+第 21 章立了机制，生产语境补三条：
+
+1. **幂等边界**：checkpoint 之间的副作用必须幂等（第 10 章）——resume 后重放的最后一步不能造成重复副作用；工具级幂等键（第 20 章）在此汇合；
+2. **恢复诚实性**：resume 输入必须声明"任务曾中断"（第 21 章），且**重新验证环境态**（世界变了）；
+3. **checkpoint 的成本**：每次 checkpoint 是一次写库——高频率任务（秒级步骤）用批量 checkpoint；副作用边界必须 checkpoint（铁律不变）。
+
+### 优雅停机
+
+```text
+SIGTERM → worker 停止取新任务 → 等当前检查点完成 → 存 checkpoint → 退出
+超时保护：给多少时间做善事（如 30s）→ 超时强制退出（任务靠 resume 恢复）
+K8s/Docker 的 terminationGracePeriodSeconds 要 ≥ 善后时间（Appendix B）
+```
+
+## 心智模型
+
+```text
+Long-running = 队列语义（可见性/DLQ/分区） + checkpoint 生产化（幂等边界/诚实恢复） + 优雅停机
+
+失败定位模型：
+  任务反复重跑           → 可见性超时 < 处理时长（处理中被重见）→ 调大或加心跳
+  僵尸任务无限循环       → 重试计数缺失 / 无 DLQ
+  resume 后副作用重复    → 幂等边界缺失（checkpoint 点与副作用点错位）
+  部署即任务丢失         → 无优雅停机 / SIGKILL 直接杀
+  积压无限增长           → 消费能力 < 生产速率 → 扩容或限流提交
+```
+
+## Minimal Implementation
+
+worker 主循环的生产骨架：
+
+```python
+def process_job(job):
+    state = load_or_create(job)          # resume 或新建
+    if state.resumed:
+        revalidate_environment(state)    # 环境态重验（第 21 章）
+    for step in state.remaining_steps():
+        if job.cancelled(): break        # 取消检查点
+        result = run_step(step)          # 幂等工具（第 20 章）
+        state.record(step, result)
+        save_checkpoint(state)           # 副作用边界必存
+    finalize(job, state)                 # done / cancelled + 事件通知
+
+def worker_main():
+    install_sigterm_handler(graceful_shutdown)   # 优雅停机
+    while running:
+        job = queue.dequeue(visibility=600, retry_limit=3)
+        process_job(job)                  # 异常 → 重试计数 +1 → 超限入 DLQ
+```
+
+## 暴露问题
+
+多 worker 并发同一 job 的抢占（需要分布式锁或队列原子性）；跨机器的任务亲和（某些工具只能在内网某机跑）；DLQ 的人工处理流程（运维接口）。
+
+## Failure Cases
+
+**案例一：可见性陷阱。** 任务处理要 15 分钟，队列可见性超时 5 分钟——处理到第 4 分钟任务被重见，另一个 worker 开始跑同一任务：双份副作用 + 状态互踩。修复：可见性 > 最大处理时长，或任务内定期心跳续期。教训：**可见性超时是"最慢合法处理时间"的声明——设短了就是双跑。**
+
+**案例二：无限重试的晚安任务。** 某任务的工具配置错了 URL，每夜重试失败 86400 次（每次可见性到期重见），日志 40GB，无人发现一周。修复：重试上限 3 + DLQ + 失败率告警（第 36 章）。教训：**自动重试必须有终局——无 DLQ 的队列是垃圾邮件生成器。**
+
+**案例三：重启大屠杀。** 部署脚本直接 `docker kill`，200 个 running 任务瞬间蒸发，用户任务全失败，客服瘫痪半天。修复：SIGTERM 优雅停机 + 排空期（stop accepting → drain → exit）+ 发布前任务排空检查。教训：**进程是消耗品，任务不是——停机协议是生产系统的成年礼。**
+
+## Exercises
+
+**Concept**：为什么"可见性超时"机制天然要求副作用幂等？从"重见"的可能性推演。
+
+**Coding**：实现带可见性/重试计数/DLQ 的内存队列（模拟），跑一个"worker 中途崩溃"场景验证任务重见与终局。
+
+**Debugging**：DLQ 里积压 300 个任务，错误全是 `ToolTimeout`。给出排查树（工具故障？目标服务限流？worker 并发打爆下游？）。
+
+**Design**：为"每日凌晨批处理 5 万条文档摘要"设计队列方案：分区（按什么键）？并发度（第 9 章信号量与 worker 数的关系）？失败任务的重试与 DLQ 策略？预估窗口（限 6 小时内跑完）的容量计算。
+
+**Evaluation**：设计长任务四守护指标：running 超时率、DLQ 增速、checkpoint 恢复成功率、重启后 resume 率——各自捕捉什么事故？
+
+## 小结
+
+- **Problem**：任务绑定进程生命周期：重启丢、崩溃重跑、取消不了、失败无限。
+- **Solution**：队列语义（可见性/DLQ/分区）+ checkpoint 生产化（幂等边界/诚实恢复）+ 优雅停机。
+- **Trade-off**：checkpoint 频率 vs I/O；可见性时长 vs 双跑风险；善后时间 vs 部署速度。
+- **Evaluation**：超时率/DLQ 增速/恢复率/resume 率——长任务健康四守护。
+
+## 连接下一章
+
+任务层可靠了，系统层还有跨任务的可靠性：一个下游服务变慢拖垮全部 worker（雪崩）、部分功能挂了系统怎么办（降级）。下一章 Reliability Engineering：从调用层（第 10 章）升维到系统层——熔断、降级、隔离舱。
+
+## References
+
+- checkpoint 机制：第 21 章；队列语义参考主流 MQ 文档（RabbitMQ/SQS 可见性语义）— Last verified: 2026-09-09
+- 幂等边界：第 10/20 章的汇合点
+- Last verified: 2026-09-09
+
+## Mental Model Check
+
+**结构模型**：队列三语义 + checkpoint 生产三补丁 + 停机协议。
+
+**因果模型**：可见性 < 处理时长→双跑；无 DLQ→无限重试；无善后→部署即事故；checkpoint 与副作用错位→重复执行。
+
+**决策模型**：可见性声明最慢合法时间；终局机制（重试上限）必有；副作用边界必 checkpoint。
+
+**迁移检验**：新需求"迁移 10 万个历史任务到新系统，要求不停机"。你的方案（不查资料）——双写期（新旧队列并行）+ 按分区迁移（有序任务保序）+ 迁移用 resume 语义（任务态导入 = 大号 checkpoint）+ DLQ 收留迁移失败项人工处理 + 全程对账（第 32 章）。**长任务工程的词汇（checkpoint/可见性/DLQ）可以直接描述一次迁移——好的抽象自己会组合。**

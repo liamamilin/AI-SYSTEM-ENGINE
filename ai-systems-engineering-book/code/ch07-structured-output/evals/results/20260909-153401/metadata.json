@@ -1,0 +1,19 @@
+{
+  "chapter": "ch07-structured-output",
+  "provider": "ollama",
+  "model": "qwen3.5:9b-mlx",
+  "dataset": "evals/dataset.jsonl",
+  "dataset_version": "2026-09-09",
+  "prompt_version": "repair-system-v1",
+  "date": "2026-09-09T15:34:01.121725+00:00",
+  "metrics": {
+    "n": 30,
+    "schema_ok_rate": 1.0,
+    "first_pass_rate": 1.0,
+    "category_accuracy": 0.8666666666666667,
+    "needs_human_accuracy": 0.5,
+    "avg_completion_tokens": 34.833333333333336,
+    "failure_types": {},
+    "wall_seconds": 50.9
+  }
+}

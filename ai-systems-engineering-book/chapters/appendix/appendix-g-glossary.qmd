@@ -1,0 +1,52 @@
+---
+title: "附录 G：术语表（Appendix G: Glossary）"
+---
+
+# 附录 G：术语表
+
+> 与 GLOSSARY.md 同步生成（自动化脚本：scripts/gen_glossary.py）。定义以 GLOSSARY.md 为准。
+
+## 概念边界
+
+```text
+Prompt ≠ Context
+Context ≠ Memory
+Memory ≠ State
+Tool ≠ Agent
+Workflow ≠ Agent
+Model ≠ Agent
+Agent ≠ AI System
+Retrieval ≠ RAG
+RAG ≠ Knowledge Base
+Fine-tuning ≠ Database
+Eval ≠ Benchmark only
+Framework ≠ Capability
+```
+
+**Model**（模型）：执行概率生成/推理的模型本体。模型不是完整 AI 系统。
+
+**Instruction**（指令）：告诉模型"应该如何处理当前任务"的上下文信息。Prompt Engineering 属于 Context Engineering 的子集。
+
+**Context**（上下文）：模型在一次推理中能够看到的信息集合。可能包括 instructions、conversation、retrieved information、tool result、memory、environment state、current task state。
+
+**Tool**（工具）：由宿主程序提供、可由模型请求调用的确定性或外部能力。通常包含 Name、Description、Schema、Executor、Permission、Result。模型提出 tool call，不等于模型自己直接执行工具。
+
+**State**（状态）：系统在不同执行步骤之间持久化的当前状态。包括 conversation state、task state、application state、environment state。
+
+**Memory**（记忆）：能够跨当前短期上下文保存、检索和重新注入信息的机制。通常建立在 persistence + retrieval + context injection 之上。
+
+**Workflow**（工作流）：预先定义控制流的任务执行流程。控制权主要由程序决定。
+
+**Agent**（智能体）：能够基于模型输出动态选择下一步动作的运行系统。简化模型：Agent = Model + Loop + Tools + State。Production Agent 还需要 context management、permissions、reliability、tracing、evaluation。
+
+**Agent**（智能体运行时）：负责组织模型、工具、状态、上下文和执行循环的宿主系统。
+
+**Retrieval**（检索）：从外部信息源中查找与当前任务相关信息的过程。
+
+**RAG**（检索增强生成）：在生成前检索外部信息并注入模型上下文的一种架构模式。RAG 是 Context Engineering 的一种实现，不是所有知识问题的默认答案。
+
+**Evaluation**（评测）：使用数据、指标或人工判断，对 AI 系统质量、可靠性、成本、延迟等进行测量的过程。
+
+**Serving**（推理服务）：把模型作为稳定在线推理服务提供给上层系统的工程过程。
+
+**Post-training**（训练后优化）：在预训练基础模型之上，通过 SFT、Preference Optimization、RL、Distillation 等手段改变模型行为和能力的过程。

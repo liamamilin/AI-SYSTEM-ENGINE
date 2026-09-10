@@ -1,0 +1,155 @@
+---
+title: "AI Backend Architecture（AI 后端架构）"
+---
+
+## 本章要解决的问题
+
+把 Agent 塞进 Web 请求-响应模型的团队都会经历同一套崩溃：用户点"开始分析"，HTTP 请求挂着，Agent 跑 8 分钟——网关 60 秒超时断连（前端报错，**后端还在继续跑并烧钱**）；用户刷新页面，任务丢失；两个用户同时来，第二个排队等第一个跑完；想给用户看进度——没有进度，只有转圈。
+
+根因：**AI 任务的时间尺度（分钟级）与 HTTP 请求的时间尺度（秒级）根本不匹配**。传统后端的请求-响应范式必须被扩展：任务（Job）成为一等公民。本章给出 AI 后端的参考架构——API 层、会话、任务、Agent runtime、模型接入、存储、流式事件七组件的职责与协作，这是 Part 5 的总起章。
+
+## 学习目标
+
+完成本章后，你能够：
+
+- 画出 AI 后端的七组件架构并说明数据流；
+- 把同步请求与长任务正确分流（什么走 HTTP，什么走 Job）；
+- 设计流式事件通道（进度/SSE/WebSocket 的选型）；
+- 识别"请求-响应范式错误承载 AI 任务"的症状。
+
+## 前置知识
+
+第 9 章（async/流式/取消）、第 19–21 章（loop/state）、第 11 章（网关）。
+
+## 问题背景
+
+七组件参考架构：
+
+```text
+API 层        鉴权/限流/路由；同步接口（毫秒-秒级）与任务接口（提交/查询）分流
+Session       会话态管理（用户↔任务的归属，第 21 章对话态的宿主）
+Job           长任务实体：状态机（queued/running/done/failed/cancelled）+ 进度
+Agent Runtime 任务的工作进程（loop + tools + state，Part 3 全部成果）
+Model 接入    模型网关（第 11 章）——所有 LLM 调用的唯一出口
+存储          任务态/对话态/制品（第 21 章：DB 化）
+事件流        进度与结果的推送通道（SSE/WebSocket）
+```
+
+数据流：`用户 → API（提交任务）→ Job 入队 → Worker 起 Agent Runtime →（经 Gateway 调模型/工具）→ 状态与进度写存储 → 事件流推给用户 → 完成`。**HTTP 请求只负责提交与查询，不承载执行**——这一条是全部架构的分水岭。
+
+## 核心概念
+
+### 任务接口的三件套
+
+```text
+POST /jobs          提交（立即返回 job_id——排队不是失败）
+GET  /jobs/{id}     查询（状态/进度/结果引用）
+POST /jobs/{id}/cancel   取消（第 9 章取消传播的落点）
+```
+
+幂等提交（同请求重复提交返回同 job_id——客户端重试安全，第 10 章原则的用户侧版本）。
+
+### 流式事件通道
+
+```text
+SSE（Server-Sent Events）：单向推送，HTTP 原生，简单可靠——进度/日志的默认选择
+WebSocket：双向——需要用户中途输入（审批交互、澄清追问，第 25 章）时用
+轮询：最土但最稳——内部工具与兜底方案
+事件契约：{type: "progress"|"log"|"result"|"error", payload, ts}——前端按 type 分发
+```
+
+选型规则：只推（进度/结果）用 SSE；要双向（审批）用 WebSocket；都没有条件就轮询。**事件是消费品的包装**——它不改变任务执行，只是让等待可见。
+
+### 取消的完整语义
+
+用户关页/点取消 → API 发 cancel → Job 标记取消 → Worker 在下一个检查点停止（工具执行完、checkpoint 写完——第 21 章）→ LLM 调用断连（省钱，第 9 章案例三）→ 事件流发 cancelled。**取消不是杀进程，是有序撤退**——每一步都有状态交代。
+
+## 心智模型
+
+```text
+AI Backend = 提交/查询分离 + Job 状态机 + Worker runtime + 网关收口 + 事件流
+
+失败定位模型：
+  前端报错但任务还在跑   → 请求承载了执行（超时断连但执行未取消）→ 分流改造
+  刷新即丢失             → 无 Job 实体 / 无 checkpoint
+  第二个用户卡死         → Worker 单实例无队列 → 队列化
+  进度永远 0%            → 事件通道缺失或事件粒度太粗（按工具调用发事件）
+  取消后仍在烧钱         → 取消传播断在 LLM 调用层
+```
+
+## Minimal Implementation
+
+最小可运行形态（技术选型：FastAPI + Redis 队列 + Postgres——Appendix B/C 速查；架构示意核心）：
+
+```python
+@app.post("/jobs")
+async def submit(req: TaskRequest, user=Depends(auth)):
+    job_id = idempotent_create(user, req)      # 幂等提交
+    await queue.enqueue(job_id)
+    return {"job_id": job_id, "status": "queued"}
+
+async def worker_loop():
+    while True:
+        job_id = await queue.dequeue()
+        agent = build_runtime(job_id)           # Part 3 的 runtime
+        async for event in agent.run_stream():
+            await events.publish(job_id, event) # 事件流
+            if await jobs.is_cancelled(job_id):
+                await agent.cancel(); break     # 有序撤退
+        await jobs.finalize(job_id)
+```
+
+工程化路线：单机 demo（进程内队列）→ Redis 队列 + 多 Worker → 完整消息队列（第 34 章展开 checkpoint/resume）。
+
+> **Current Implementation Note**（`code/ch33-ai-backend/` 已实测，Last verified: 2026-09-10）：七组件进程内实现（`ApiLayer/SessionManager/Job+JobQueue/AgentRuntime+Worker/复用 ch11 Gateway/MemoryStorage/EventStream`），17 个 mock 测试覆盖分流规则、Job 状态机（含非法迁移拒绝）、幂等提交、超时→failed、降级矩阵（回退层→全层耗尽→排队降级）、事件回放、并发排队。mock Ollama server 冒烟演示：同步直答、长任务提交即断连→done（事件流 accepted→queued→started→done）、主模型 down→degraded。生产替换点：MemoryStorage→Postgres（Appendix C）、进程内队列→Redis（Appendix B）——组件接口不变。
+
+## 暴露问题
+
+Job 实体引入后：Worker 崩溃时 Job 卡在 running（需要超时判定与恢复——第 34 章）；任务优先级与并发配额（多租户公平性）；事件流的背压（慢客户端，第 9 章）。
+
+## Failure Cases
+
+**案例一：60 秒断连，8 分钟白跑。** 开篇场景的解剖：HTTP 网关超时 ≠ 任务取消。修复：任务接口分流 + 提交即断连 + 事件流查询进度。教训：**基础设施的超时语义与业务执行必须解耦。**
+
+**案例二：单 Worker 排队地狱。** 首发日流量 ×10，单 Worker 串行处理，第 200 个用户等 40 分钟。修复：队列 + Worker 水平扩容（Worker 无状态化——状态全在存储，第 21 章的红利）。教训：**无状态 Worker 是扩容的前提——状态出进程，算力才能横着加。**
+
+**案例三：事件风暴。** 逐 token 推送进度，前端每秒 200 条消息渲染卡死。修复：事件节流（聚合 500ms 推一次）+ 事件分级（token 流 vs 进度 vs 结果）。教训：**流式的粒度是设计决策——不是越细越好。**
+
+## Exercises
+
+**Concept**：为什么"提交即返回 job_id"的接口形态比同步等待更适合 AI 任务？用时间尺度论证。
+
+**Coding**：实现最小 Job 状态机（queued/running/done/failed/cancelled）+ 幂等提交 + SSE 事件端点，写 6 个测试。
+
+**Debugging**：监控显示大量 job 卡在 running 超 30 分钟。给出三个可能原因（Worker 崩溃/死循环未设上限/取消传播断裂）与判定方法。
+
+**Design**：为"批量文档翻译平台"设计后端架构：任务粒度（整批 vs 单文档）怎么定？部分失败怎么呈现？估算成本怎么提前给用户？
+
+**Evaluation**：设计后端健康四指标：排队时长 P95、running 积压数、取消传播成功率、事件流断连率——各自捕捉什么故障？
+
+## 小结
+
+- **Problem**：分钟级 AI 任务塞进秒级 HTTP 范式：断连/丢失/排队/无进度。
+- **Solution**：七组件架构 + 提交/查询分离 + Job 状态机 + 有序取消 + 事件流。
+- **Trade-off**：SSE vs WebSocket vs 轮询；事件粒度 vs 前端压力。
+- **Evaluation**：排队时长/积压/取消成功率/断连率——后端健康可测。
+
+## 连接下一章
+
+架构立起来了，Job 的生命管理是下一层：Worker 崩了怎么办？任务跑一半怎么续？怎么优雅停机不杀任务？下一章 Long-running Tasks：队列、worker、checkpoint、resume、cancellation 的完整工程。
+
+## References
+
+- 架构组件与第 9/11/19–21 章的衔接关系
+- SSE 语义：MDN/各框架文档 — Last verified: 2026-09-09
+- Last verified: 2026-09-09
+
+## Mental Model Check
+
+**结构模型**：七组件 + 提交/查询分离 + 事件契约。
+
+**因果模型**：请求承载执行→断连与执行脱钩；无状态 Worker→水平扩容；取消不传播→静默烧钱。
+
+**决策模型**：时间尺度决定接口形态；事件按 type 分级；单向推 SSE、双向 WS。
+
+**迁移检验**：新需求"AI 视频转写平台，单个任务 40 分钟"。你的架构（不查资料）——必然 Job 化（时间尺度差 800 倍）；进度按转写百分比发事件；取消必须断开转写服务调用（成本大头）；Worker 无状态 + 任务态全在 DB（40 分钟任务崩溃恢复是必然事件，第 34 章 checkpoint 从第一天就要有）。**时间尺度一算，架构就定了。**

@@ -1,0 +1,23 @@
+# Experiment Registry
+
+> 每次正式实验登记一条（Ch17 复现规范）。不可复现的实验不记录结论。
+
+| run_id | date | chapter | model | model_ver | prompt_ver | dataset_ver | config | git_commit | metrics | conclusion | reproducible |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| ch05-exp-001 | 2026-09-09 | Ch5 | qwen3.5:9b-mlx | Ollama local | n/a | n/a | temp 0/1 ×5, max_tokens 30/200, think on/off | n/a | temp=0: 5/5 相同输出; temp=1: 5/5 不同; think on + max_tokens=200 → 空内容 | 推理型模型思考段吞输出预算且 OpenAI-compat 不返回；稳定性由采样参数控制 | Y（scripts/ch05_experiments.py, ch05_native_check.py） |
+| ch06-exp-001 | 2026-09-09 | Ch6 | qwen3.5:9b-mlx | Ollama local | prose-v0 / template-v1 | 20 条工单测试集 | temp=0, think off | n/a | 散文版 18/20 且 2 次输出夹带解释；模板版 20/20 输出干净 | 结构化模板+边界示例的收益集中在难样本 | Y |
+| ch07-eval-001 | 2026-09-09 | Ch7 | qwen3.5:9b-mlx | Ollama local | repair-system-v1 | evals/dataset.jsonl 30 条 | temp=0, think off, max_attempts=3 | n/a | schema 100% / first_pass 100% / category 86.7% / needs_human 50% | 结构化问题已解决；needs_human 存在系统性保守分歧——评测暴露任务定义问题 | Y（code/ch07-structured-output/evals/） |
+| ch08-eval-001 | 2026-09-09 | Ch8 | qwen3.5:9b-mlx | Ollama local | loop-system-v1 | tool_cases.jsonl 15 条 | temp=0, think off, max_rounds=4 | n/a | 选工具 93.3% / 参数 100% / 零幻觉工具 | 模型对简单算术跳过工具（能力捷径）；结构化错误回注使自纠有效 | Y（code/ch08-tool-calling/evals/） |
+| ch09-exp-001 | 2026-09-09 | Ch9 | qwen3.5:9b-mlx | Ollama local | n/a | 6 prompts | 串行/并发/信号量 2-3；streaming | n/a | 串行 2.6s / 并发 2.0s / TTFT 170ms | 本地并发收益仅 ~25%（服务端排队）；流式感知价值 7 倍 | Y（scripts/ch09_concurrency_experiment.py） |
+| ch10-exp-001 | 2026-09-09 | Ch10 | mock server | n/a | n/a | 30 客户端×4 重试 | 配额 12/s；三策略对比 | n/a | 成功率 40%→80%→83%；放大 ×2.4-2.5 | 重试救瞬时损失不救容量；固定间隔造成同步波次 | Y（scripts/ch10_retry_experiment.py） |
+| ch19-exp-001 | 2026-09-09 | Ch19 | qwen3.5:9b-mlx | Ollama local | loop-v1 | n/a | temp=0, think off, max_rounds=8 | n/a | 2 轮完成计算任务，calculator 1 次调用 | 最小 Agent Loop 协议可用；stop=finished 正常 | Y（code/ch19-agent-loop/） |
+| ch41-exp-001 | 2026-09-09 | Ch41 | qwen3.5:9b-mlx | Ollama local (MLX) | n/a | salted/unsalted 前缀 ×4 长度 | num_predict=100, stream | n/a | prefill≈2.8ms/token 线性；decode 恒定 ~36 tok/s；前缀缓存 prefill 3s→0.2s | 两阶段成本特征实测确认；缓存收益 15 倍级 | Y（scripts/ch41_inference_experiment.py） |
+| ch28-exp-001 | 2026-09-09 | Ch28 | nomic-embed-text / bge-m3 | Ollama local | n/a | 8 docs + 6 queries | BM25 char-bigram / dense / hybrid α=0.6 | n/a | BM25 R@2=0.33 MRR=0.39；nomic dense R@2=0.17（语言失配）；hybrid MRR=0.48 | embedding 语言匹配是第一检查项；BM25 是强 baseline；混合修排序 | Y（scripts/ch28_retrieval_experiment.py） |
+| ch54-exp-001 | 2026-09-10 | Ch54 | omen-alpha（teacher，Zen API）/ qwen3.5:9b（student，未训） | Zen API + Ollama local（bge-m3 去重） | generate-v1 / judge-v1 | ch54-seeds.json 30 条（人工编写，模拟真实工单） | temps 0.3/0.7/1.0，judge 阈值 4/5，dedup cosine 0.92 | n/a | 漏斗 90→88(规则)→86(自审)→45(去重)；judge 淘汰 2；平均成对 cosine 0.568；血缘 100% | 三道过滤可用；同温度跨温度近重复率 48%——teacher 多样性上限实测（去重是硬需求）；teacher 自审通过率 98% 高于幻觉防御所需，人工抽审不可省 | Y（scripts/ch54_distillation_experiment.py） |
+| ch47-exp-001 | 2026-09-10 | Ch47 | Qwen2.5-7B-Instruct FP16 / AWQ | vLLM 0.29.0，RTX 4080 SUPER 32GB | ch44 压测协议（TTFT/TPOT/聚合吞吐，流式） | 固定 prompt（长 system~1.4K tok + 固定用户问题），每档 16 请求，max_tokens 256 | --max-model-len 8192 --gpu-memory-utilization 0.92；prefix caching on/off | n/a | FP16：聚合 43.8→556 tok/s（L1→L32 趋平）；prefix ON vs OFF：TTFT 52→102ms（低并发）、聚合 556→406（L32，+37%）；AWQ L32 聚合 1349 tok/s（FP16 的 2.4×）；评测护航（ch07 30 条 first-pass）：FP16 schema 100%/category 80%/needs_human 56.7%，AWQ 96.7%/76.7%/73.3% | 拐点并发≈16（TTFT 跳升 2 倍，聚合趋平）；prefix caching 是低并发 TTFT 与高并发吞吐的双赢开关；量化 decode 吞吐 2.4×（Marlin）但必须过评测护航；实测故障三例：nvcc 过老不支持 flashinfer（VLLM_USE_FLASHINFER_SAMPLER=0 绕过）、HF Xet 后端 401（HF_HUB_DISABLE_XET=1）、压测模型名与 server 不符（success=0 需报警而非静默） | Y（scripts/ch47_pressure_test.py, ch47_eval_compare.py；结果存 experiments/gpu-2026-09-10/） |
+| ch52-exp-002 | 2026-09-10 | Ch52 | Qwen2.5-7B-Instruct QLoRA（NF4） | CUDA：torch 2.13 + bitsandbytes + peft，RTX 4080 SUPER 32GB | ch51 SFT 模板 | ch52_train.jsonl 40 条 | r=16 α=32（α=2r），targets q/k/v/o/gate/up/down，lr 1e-4，bf16 compute | n/a | NF4 权重 5.45GB；峰值显存 **8.56GB**；可训练参数 40.37M=0.527%；1.88 steps/s（seq≤512, batch 2）；loss 3.16→1.36（20 步） | 显存账实测吻合章节推算：7B QLoRA 全程 <9GB——"单卡 32GB 训 7B、48GB 训 70B"的账本成立；可训练参数 <1% 两条路线（MLX 0.594% / CUDA 0.527%）互相印证 | Y（scripts/ch52_qlora_cuda.py） |
+| ch53-exp-001 | 2026-09-10 | Ch53 | Qwen2.5-0.5B-Instruct | CUDA：TRL DPOTrainer，RTX 4080 SUPER 32GB | ch54-chosen（judge≥5 的 t0.3 回复）/ rejected=模型自生成敷衍回复 | 30 偏好对（差距清晰：具体步骤+时限 vs 空洞道歉） | β=0.1，lr 5e-6，3 epochs，batch 2×GA4 | n/a | 训练 14s，峰值显存 6.86GB；loss 0.347→0.024；rewards/margins 1.18→4.16；rewards/accuracies=1.0 | DPO 管线端到端可验证：margin 显著变正 = 模型确实学会偏好；"差距清晰的偏好对"（ch53 纪律）可直接由合成数据的温度变体+质量分层构造 | Y（scripts/ch53_dpo_exp.py） |
+
+## 登记
+
+（暂无，随章节实验填充）

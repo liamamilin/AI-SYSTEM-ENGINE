@@ -1,0 +1,37 @@
+---
+title: "附录 F：框架对照（Appendix F: Framework Comparison）"
+---
+
+# 附录 F：框架对照
+
+本书立场（WRITING_GUIDE/AGENT §7）：**框架是实现案例，不是知识树**。本附录把主流框架映射到本书的稳定抽象——读完你能"看穿"任何框架。
+
+## 映射表
+
+```text
+本书抽象              LangChain            LangGraph           OpenAI Agents SDK
+Tool 六要素（Ch8）    Tool/BaseTool        ToolNode            FunctionTool
+Loop/停止（Ch19）     Chain/AgentExecutor  StateGraph 条件边   Runner（max_turns）
+State（Ch21）         Memory 类            Checkpointer        Session/状态对象
+Provider 抽象（Ch11） Model I/O            —                   Model 接口
+HITL（Ch25）          —                    interrupt 机制      Human-in-the-loop 工具
+Tracing（Ch36）       Callbacks            —                   Tracing
+RAG（Ch29）           Retrievers/Index     —                   File search（托管）
+```
+
+## 使用框架的三条纪律
+
+1. **先手写后框架**：机制理解先于封装使用（第 19 章的手写 loop 是读懂任何框架的钥匙）；
+2. **抽象边界审计**：框架替你做了哪些决定（停止条件/状态结构/错误恢复）——符合你的需求吗（第 19 章的每个设计决策都是审计清单）；
+3. **逃逸舱**：框架解决 90%，剩下 10% 的特性调用留逃生舱（第 11 章原则）。
+
+## 选型速查
+
+```text
+简单链式流程 + 快速原型        → LangChain 足够
+复杂状态机 + 需要中断/恢复     → LangGraph 的图模型契合（Ch34 长任务语义）
+轻量 Agent + 官方生态          → Agents SDK
+自研深度定制 + 强门禁要求      → 本书的自建路线（capstone 姿态）
+```
+
+选型是工程决策不是信仰——**评测基建（Part 2）与任何框架兼容**，这是换框架成本可控的根本原因。

@@ -1,0 +1,15 @@
+{"id": "e01", "input": "345 乘以 12 等于多少", "expected": {"tool": "calculator", "arg_contains": {"expression": "345*12"}}}
+{"id": "e02", "input": "帮我算一下 (188+92)/7", "expected": {"tool": "calculator", "arg_contains": {"expression": "(188+92)/7"}}}
+{"id": "e03", "input": "上海现在天气怎么样", "expected": {"tool": "get_weather", "arg_contains": {"city": "上海"}}}
+{"id": "e04", "input": "深圳会下雨吗", "expected": {"tool": "get_weather"}}
+{"id": "e05", "input": "广州天气如何", "expected": {"tool": "get_weather"}}
+{"id": "e06", "input": "128 的 8 倍是多少", "expected": {"tool": "calculator"}}
+{"id": "e07", "input": "把 3/4 化成小数", "expected": {"tool": "calculator"}}
+{"id": "e08", "input": "北京的天气适合洗车吗", "expected": {"tool": "get_weather"}}
+{"id": "e09", "input": "100 除以 3 保留两位小数是多少", "expected": {"tool": "calculator"}}
+{"id": "e10", "input": "你叫什么名字", "expected": {"tool": null}}
+{"id": "e11", "input": "谢谢，就这些", "expected": {"tool": null}}
+{"id": "e12", "input": "帮我发一封邮件给老板", "expected": {"tool": null, "note": "没有该工具，模型不应编造调用"}}
+{"id": "e13", "input": "上海和深圳哪个温度高", "expected": {"tool": "get_weather", "multi": 2}}
+{"id": "e14", "input": "帮我算一下 2 的 10 次方（用乘法）", "expected": {"tool": "calculator"}}
+{"id": "e15", "input": "深圳温度乘以 3 是多少", "expected": {"tool": "get_weather", "note": "应先查天气再算，可能两轮"}}

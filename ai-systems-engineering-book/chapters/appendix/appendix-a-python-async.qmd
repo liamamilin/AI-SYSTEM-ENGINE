@@ -1,0 +1,48 @@
+---
+title: "附录 A：Python / Async 速查（Appendix A: Python & Async Refresher）"
+---
+
+# 附录 A：Python / Async 速查
+
+本书约定（engineering-standard.md）：Python 3.12 + uv 管理 + ruff + mypy + pytest。本附录只列本书用到的最小集。
+
+## asyncio 速查
+
+```python
+import asyncio
+
+async def call(x):            # 协程：await 才执行
+    await asyncio.sleep(1)
+    return x
+
+# 并发执行 + 异常隔离（Ch9 铁律）
+results = await asyncio.gather(*(call(i) for i in range(10)), return_exceptions=True)
+
+# 并发度控制（信号量）
+sem = asyncio.Semaphore(5)
+async def guarded(x):
+    async with sem:
+        return await call(x)
+
+# 超时与取消
+try:
+    out = await asyncio.wait_for(call(1), timeout=10)
+except asyncio.TimeoutError: ...
+t = asyncio.create_task(call(1)); t.cancel()   # 抛 CancelledError
+```
+
+纪律：**异步链上禁混同步阻塞调用**（同步 requests/DB 驱动会卡死事件循环）——LLM 调用、HTTP（httpx.AsyncClient）、DB（asyncpg）全异步。同步生态需求 → `asyncio.to_thread` 包裹。
+
+## 类型注解与 pytest 速查
+
+```python
+def fn(x: int, *, flag: bool = False) -> str: ...   # 公共函数必注解（kw-only 推荐）
+class Client(Protocol):                              # 结构化协议（第 11 章模式）
+    def complete(self, messages) -> Completion: ...
+
+# 测试分层（engineering-standard §4）
+# unit：FakeClient 回放（ch19 ScriptedClient 模式，确定性零成本）
+# integration：本地 Ollama；live：RUN_LIVE_TESTS=1 显式开启
+```
+
+详见第 9 章（并发语义）、第 7/19 章（mock 测试模式）。

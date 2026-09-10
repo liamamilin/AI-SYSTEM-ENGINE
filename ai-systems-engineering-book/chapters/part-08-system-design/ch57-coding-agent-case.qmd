@@ -1,0 +1,155 @@
+---
+title: "Coding Agent Case Study（Coding Agent 案例）"
+---
+
+## 本章要解决的问题
+
+你每天都在用的最复杂的 Agent 形态：Coding Agent（本书写作过程本身就用了它）。为什么它能改对代码？为什么它有时 confidently 搞砸？本章用十步设计法解剖这类系统：代码搜索、文件系统、shell、patch、测试、沙箱、git、评测——每个工具的权限设计、每个机制的章节出处。读完你会获得两样东西：**看穿任何 coding agent 的架构能力**，以及**给自己的 Agent 借走它的成熟设计**。
+
+## 学习目标
+
+完成本章后，你能够：
+
+- 用工具视角拆解 coding agent 的能力面（读/写/执行/版本控制）；
+- 理解其安全设计的关键决策（沙箱执行 shell、patch 而非直接写、git 兜底）；
+- 识别"coding agent 翻车"的高频模式（上下文漂移/验证缺失/权限过宽）。
+
+## 前置知识
+
+第 56 章（十步法）+ Part 3（Agent）、Ch37-38（安全）、Part 2（评测）。
+
+## 问题背景
+
+### 工具面解剖（每件都有出处）
+
+```text
+read_file / search（grep/glob）  ：只读，L0 自动（可逆可检出代价低，Ch25 分级）
+write_file / edit（patch 式）    ：写操作但可逆（git 兜底）→ L0–L1 之间
+shell 执行                       ：最大能力面 → 沙箱容器（Ch38 L2）+ 白名单模式
+test 运行                        ：执行的确定性子集（验证器角色——可验证奖励的
+                                   工程版，Ch53：test 通过=硬信号）
+git                              ：可逆性的提供者——commit/checkpoint 的文件系统版（Ch21）
+```
+
+**三个最值得偷的设计**：
+
+1. **Patch 而非覆盖**：模型提议精确 diff（结构化输出，Ch7 的极致应用）——审计面小、可拒绝、可回放；
+2. **测试即验证器**：每轮修改跑测试（test 工具的结果回注 loop，Ch19）——Agent 自带完成判据；
+3. **git 作为状态层**：一切写操作可逆——Autonomy Boundary 三问的"可逆"被机制化满足，因此敢给更高执行自主。
+
+### 高频翻车模式（失败定位）
+
+```text
+上下文漂移    ：多文件大改后忘记最初目标（Ch22 锚点缺失）→ 计划锚点+每步对照
+验证缺失      ：改完不跑测试就声称完成（stop 条件设计缺陷，Ch19）
+              → 完成判据进协议（"全部测试绿"才算 finish）
+权限过宽      ：shell 全开 → 注入式命令（Ch37 不安全执行）
+              → 白名单模式 + 危险命令 L1
+搜索低效      ：盲读整仓（上下文爆炸，Ch24）→ 结构化搜索优先、按需展开
+```
+
+## 心智模型
+
+```text
+Coding Agent = 读工具面 + patch 式写 + 沙箱执行 + 测试验证器 + git 可逆层
+
+决策模型（借用它的设计）：
+  给你的 Agent 加可逆层（git/回滚）→ 解锁更高执行自主（三问的第一问被满足）
+  给你的 Agent 加验证器（测试/规则检查）→ finish 才有判据（早熟收敛的解，Ch22）
+  写操作走 patch 提议 → 审计与拒绝都有了抓手
+```
+
+## Minimal Implementation：patch 提议-校验-应用-回滚
+
+把"三个可偷设计"压进一个 60 行的工具链：模型只产出结构化 patch 提议（不直接写文件），宿主校验、应用、留回滚点：
+
+```python
+import difflib, subprocess
+from pydantic import BaseModel, field_validator
+
+class PatchProposal(BaseModel):
+    """模型的唯一写文件通道：精确 diff 提议（Ch7 结构化输出的极致应用）"""
+    file: str
+    diff: str          # unified diff 格式
+    rationale: str     # 为什么要改——审计面的"说理由"字段
+
+    @field_validator("diff")
+    @classmethod
+    def diff_wellformed(cls, v):
+        if not v.startswith(("---", "***", "@@")):
+            raise ValueError("必须是 unified diff，不是文件全文")
+        return v
+
+class PatchToolchain:
+    def __init__(self, workdir, allowlist: set[str]):
+        self.workdir, self.allowlist = workdir, allowlist
+
+    def validate(self, p: PatchProposal) -> None:
+        if p.file not in self.allowlist:               # 白名单路径（Ch38 能力约束）
+            raise PermissionError(f"路径不在白名单: {p.file}")
+        if any(tok in p.diff for tok in ("rm -rf", "sudo", "curl | sh")):
+            raise ValueError("diff 中含危险命令痕迹")
+
+    def apply(self, p: PatchProposal) -> str:
+        self.validate(p)
+        self._checkpoint(p.file)                       # git 兜底：应用前留回滚点
+        target = self.workdir / p.file
+        result = subprocess.run(
+            ["git", "apply", "-"], input=p.diff, text=True,
+            cwd=self.workdir, capture_output=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"patch 应用失败: {result.stderr[:200]}")
+        return f"applied {p.file}"
+
+    def _checkpoint(self, file: str) -> None:
+        subprocess.run(["git", "stash", "push", "--", file],
+                       cwd=self.workdir, capture_output=True)
+
+    def rollback(self, file: str) -> str:
+        subprocess.run(["git", "checkout", "--", file], cwd=self.workdir)
+        return f"rolled back {file}"
+```
+
+与正文三设计的对应关系：**patch 提议 = 写操作的审计抓手**（模型权限只有"提议"，应用权在宿主）；**validate = 能力约束**（白名单 + 内容检查，Ch38）；**checkpoint/rollback = 可逆层**（Autonomy Boundary 三问的"可逆"被机制满足，敢放行更高自主）。测试要点：白名单外路径拒绝、非法 diff 拒绝、应用后 rollback 复原、危险命令拦截——4 个确定性测试不依赖模型。
+
+## Failure Cases
+
+**案例一：confidently 搞砸。** Agent 重命名核心函数，动态引用没改全，测试部分绿——它宣布完成。归因：完成判据不完整（"部分测试"≠"全绿"）+ 状态里的任务目标被稀释。修复对照：判据进协议 + 计划锚点。教训：**"看起来完成了"是 Agent 最危险的状态——判据必须是机器可验的。**
+
+**案例二：shell 里的注入。** Agent 读了一个 README（含恶意命令建议）后在 shell 里执行。归因：间接注入（Ch37）+ shell 全权限（Ch38 缺位）。教训：**读进来的东西会变成要做的事——内容隔离+执行沙箱缺一不可。**
+
+**案例三：上下文爆仓。** 大型重构任务，Agent 把 20 个文件的全文读进 context，30 步后稀释失效。修复：结构化搜索 + 按需读片段 + 摘要化已处理文件（Ch24 手段库的实战）。教训：**coding agent 的上下文管理与它的代码能力同样重要。**
+
+## Exercises
+
+**Concept**：为什么"测试通过"作为 finish 判据比"我认为改好了"本质更安全？（用第 15 章 task success 的可验证性论证。）
+
+**Coding**：实现一个最小"patch 提议-校验-应用-回滚"工具链（diff 解析+git 兜底），写 5 个测试。
+
+**Design**：为你所在领域的 Agent 借设计：什么是你的"测试"（验证器）？什么是你的"git"（可逆层）？
+
+**Evaluation**：设计 coding agent 的评测集：真实 issue 若干 + 仓库快照 + 完成判据（测试全绿）——任务成功率怎么定义才不被"表面通过"欺骗？
+
+## 小结与连接
+
+- **Problem**：coding agent 复杂难懂；翻车模式高频。
+- **Solution**：工具面解剖 + 三个可偷设计（patch/测试验证器/git 可逆层）+ 四类翻车归因。
+- **Evaluation**：判据机器可验 + 真实 issue 评测集。
+
+下一章 Research Agent：另一端——开放性信息任务，幻觉与引用是主战场。
+
+## References
+
+- 案例解剖基于主流 coding agent 公开设计（Claude Code/Codex 等架构模式）— Last verified: 2026-09-09
+- 机制出处：Ch7/19/21/22/24/37/38 标注于正文
+- Last verified: 2026-09-09
+
+## Mental Model Check
+
+**结构模型**：四层工具面（读/写/执行/版本控制）+ 验证器角色。
+
+**因果模型**：可逆层→执行自主解锁；判据缺失→confidently 错误；内容→行动链（注入）。
+
+**决策模型**：patch 化写操作；判据进协议；可逆层是自主性的前提而非结果。
+
+**迁移检验**：新需求"DB 迁移 Agent"。你借什么（不查资料）——验证器：迁移后数据对账脚本（test 的等价物）；可逆层：迁移前快照+回滚脚本（git 的等价物）；patch 化：迁移方案先提案（SQL diff）审批后执行（L1）。**三个可偷设计跨领域成立——因为它们解决的是 Agent 的普遍问题（判据/可逆/审计），不是代码的特有问题。**

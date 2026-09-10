@@ -1,0 +1,27 @@
+# 秘密（绝不提交）
+.env
+**/.env
+!.env.example
+
+# 构建产物（由 GitHub Actions 在 CI 内渲染）
+_book/
+_book
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# 编辑器/系统
+.DS_Store
+.Rproj.user/
+*.Rproj
+
+# 临时
+*.log
+nohup.out
+
+# 冗余归档（内容与目录重复）
+*.zip

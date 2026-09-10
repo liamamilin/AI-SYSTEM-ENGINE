@@ -1,0 +1,22 @@
+[project]
+name = "lora-lab"
+version = "0.1.0"
+description = "Chapter 52: MLX local LoRA fine-tuning route (data prep / train wrapper / base-vs-LoRA eval compare)"
+requires-python = ">=3.12"
+dependencies = [
+    # CLI 语法按 0.31.x 验证（rank/alpha 走 -c YAML、--data 为目录、adapter_path 为目录）
+    "mlx-lm>=0.31,<1 ; sys_platform == 'darwin' and platform_machine == 'arm64'",
+]
+
+[dependency-groups]
+dev = ["pytest>=8,<9"]
+
+[build-system]
+requires = ["uv_build>=0.7"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "lora_lab"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

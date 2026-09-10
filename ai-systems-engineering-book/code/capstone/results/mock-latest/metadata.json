@@ -1,0 +1,13 @@
+{
+  "run_id": "20260910-050730",
+  "date": "2026-09-10T05:07:30.077893+00:00",
+  "n_cases": 32,
+  "n_failed_execution": 0,
+  "mode": "mock",
+  "dataset": {
+    "path": "dataset.jsonl",
+    "n": 32,
+    "sha256_12": "7f35b02d509e"
+  },
+  "note": "mock 模式：检索/权限/SQL/拒答为确定性组件评测；生成质量需 live 模式"
+}

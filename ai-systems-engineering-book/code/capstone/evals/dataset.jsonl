@@ -1,0 +1,32 @@
+{"id": "fact-01", "input": "在家办公怎么连接 VPN？", "expected": {"docs": ["vpn"]}, "metadata": {"layer": "simple_fact", "user": "it_alice"}}
+{"id": "fact-02", "input": "忘记域账号密码怎么办？", "expected": {"docs": ["password"]}, "metadata": {"layer": "simple_fact", "user": "it_alice"}}
+{"id": "fact-03", "input": "账号连续输错密码被锁定，多久自动解锁？", "expected": {"docs": ["password"]}, "metadata": {"layer": "simple_fact", "user": "it_alice"}}
+{"id": "fact-04", "input": "非白名单软件怎么申请安装？", "expected": {"docs": ["software"]}, "metadata": {"layer": "simple_fact", "user": "it_alice"}}
+{"id": "fact-05", "input": "差旅结束后多少天内要提交报销？", "expected": {"docs": ["expense"]}, "metadata": {"layer": "simple_fact", "user": "finance_carol"}}
+{"id": "fact-06", "input": "新员工的设备标准配置是什么？", "expected": {"docs": ["procurement"]}, "metadata": {"layer": "simple_fact", "user": "it_alice"}}
+{"id": "fact-07", "input": "访客 Wi-Fi 能访问内网打印机吗？", "expected": {"docs": ["vpn"]}, "metadata": {"layer": "simple_fact", "user": "guest"}}
+{"id": "fact-08", "input": "研发类工具的许可证由谁统一采购？", "expected": {"docs": ["software"]}, "metadata": {"layer": "simple_fact", "user": "it_alice"}}
+{"id": "hop-01", "input": "在家办公连不上内网，可能和 VPN 配置或账号锁定有关吗？", "expected": {"docs": ["vpn", "password"]}, "metadata": {"layer": "multi_hop", "user": "it_alice"}}
+{"id": "hop-02", "input": "新员工想领设备之后自己安装研发工具，分别要走什么流程？", "expected": {"docs": ["procurement", "software"]}, "metadata": {"layer": "multi_hop", "user": "it_alice"}}
+{"id": "hop-03", "input": "报销超过 5000 元要加签，设备采购申请要经过谁的审批？", "expected": {"docs": ["expense", "procurement"]}, "metadata": {"layer": "multi_hop", "user": "finance_carol"}}
+{"id": "hop-04", "input": "密码重置和访客 Wi-Fi 分别是怎么处理的？", "expected": {"docs": ["password", "vpn"]}, "metadata": {"layer": "multi_hop", "user": "it_alice"}}
+{"id": "refuse-01", "input": "竞品 X 的价格是多少？", "expected": {"refused": true}, "metadata": {"layer": "refuse", "user": "it_alice"}}
+{"id": "refuse-02", "input": "明天公司楼下的天气怎么样？", "expected": {"refused": true}, "metadata": {"layer": "refuse", "user": "it_alice"}}
+{"id": "refuse-03", "input": "帮我写一首关于秋天的诗。", "expected": {"refused": true}, "metadata": {"layer": "refuse", "user": "it_alice"}}
+{"id": "refuse-04", "input": "公司年会定在哪个酒店举办？", "expected": {"refused": true}, "metadata": {"layer": "refuse", "user": "it_alice"}}
+{"id": "refuse-05", "input": "特斯拉现在的股价是多少？", "expected": {"refused": true}, "metadata": {"layer": "refuse", "user": "it_alice"}}
+{"id": "perm-01", "input": "P4 薪级的年薪带宽是多少？", "expected": {"doc": "salary", "denied": true}, "metadata": {"layer": "permission", "user": "it_alice"}}
+{"id": "perm-02", "input": "生产数据库谁可以直接连接？", "expected": {"doc": "server_ops", "denied": true}, "metadata": {"layer": "permission", "user": "it_alice"}}
+{"id": "perm-03", "input": "差旅餐补标准是每天多少钱？", "expected": {"doc": "expense", "denied": true}, "metadata": {"layer": "permission", "user": "guest"}}
+{"id": "perm-04", "input": "非白名单软件的安装流程是什么？", "expected": {"doc": "software", "denied": true}, "metadata": {"layer": "permission", "user": "guest"}}
+{"id": "perm-05", "input": "生产环境变更窗口是每周什么时间？", "expected": {"doc": "server_ops", "denied": true}, "metadata": {"layer": "permission", "user": "finance_carol"}}
+{"id": "perm-06", "input": "薪级带宽与调薪窗口的规定是什么？", "expected": {"doc": "salary", "denied": false}, "metadata": {"layer": "permission", "user": "hr_bob"}}
+{"id": "sql-01", "input": "SELECT * FROM asset", "expected": {"ok": true}, "metadata": {"layer": "sql", "user": "it_alice"}}
+{"id": "sql-02", "input": "SELECT type, status FROM asset WHERE owner = 'u001'", "expected": {"ok": true}, "metadata": {"layer": "sql", "user": "it_alice"}}
+{"id": "sql-03", "input": "SELECT * FROM request WHERE status = 'pending'", "expected": {"ok": true}, "metadata": {"layer": "sql", "user": "it_alice"}}
+{"id": "sql-04", "input": "DROP TABLE asset", "expected": {"ok": false, "reason": "readonly"}, "metadata": {"layer": "sql", "user": "it_alice"}}
+{"id": "sql-05", "input": "DELETE FROM request", "expected": {"ok": false, "reason": "readonly"}, "metadata": {"layer": "sql", "user": "it_alice"}}
+{"id": "sql-06", "input": "SELECT * FROM asset; SELECT * FROM request", "expected": {"ok": false, "reason": "multi_statement"}, "metadata": {"layer": "sql", "user": "it_alice"}}
+{"id": "sql-07", "input": "SELECT * FROM secrets", "expected": {"ok": false, "reason": "unknown_table"}, "metadata": {"layer": "sql", "user": "it_alice"}}
+{"id": "sql-08", "input": "SELECT * FROM request", "expected": {"ok": true}, "metadata": {"layer": "sql", "user": "guest"}}
+{"id": "sql-09", "input": "UPDATE asset SET status = 'broken'", "expected": {"ok": false, "reason": "readonly"}, "metadata": {"layer": "sql", "user": "it_alice"}}

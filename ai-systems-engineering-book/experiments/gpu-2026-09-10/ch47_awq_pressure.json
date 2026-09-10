@@ -1,0 +1,42 @@
+{
+ "meta": {
+  "base_url": "http://localhost:8000/v1",
+  "model": "Qwen/Qwen2.5-7B-Instruct-AWQ",
+  "tag": "awq_prefix_on",
+  "reqs_per_level": 16,
+  "max_tokens": 256,
+  "ts": "2026-09-10T12:27:36.388148+00:00"
+ },
+ "levels": {
+  "1": {
+   "success": 16,
+   "ttft_median": 0.0434,
+   "ttft_p95": 0.0468,
+   "tpot_median": 0.0079,
+   "per_stream_tps": 120.7,
+   "agg_throughput_tps": 120.7,
+   "mean_tokens": 86.8,
+   "wall": 11.51
+  },
+  "16": {
+   "success": 16,
+   "ttft_median": 0.1361,
+   "ttft_p95": 0.1412,
+   "tpot_median": 0.0503,
+   "per_stream_tps": 24.1,
+   "agg_throughput_tps": 295.8,
+   "mean_tokens": 93.7,
+   "wall": 5.07
+  },
+  "32": {
+   "success": 16,
+   "ttft_median": 0.1477,
+   "ttft_p95": 0.153,
+   "tpot_median": 0.0085,
+   "per_stream_tps": 100.4,
+   "agg_throughput_tps": 1349.4,
+   "mean_tokens": 94.9,
+   "wall": 1.13
+  }
+ }
+}

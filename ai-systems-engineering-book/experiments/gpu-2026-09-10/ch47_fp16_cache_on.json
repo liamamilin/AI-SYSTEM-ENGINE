@@ -1,0 +1,72 @@
+{
+ "meta": {
+  "base_url": "http://localhost:8000/v1",
+  "model": "Qwen/Qwen2.5-7B-Instruct",
+  "tag": "fp16_prefix_on_v2",
+  "reqs_per_level": 16,
+  "max_tokens": 256,
+  "ts": "2026-09-10T11:09:51.548775+00:00"
+ },
+ "levels": {
+  "1": {
+   "success": 16,
+   "ttft_median": 0.0522,
+   "ttft_p95": 0.0576,
+   "tpot_median": 0.0224,
+   "per_stream_tps": 43.8,
+   "agg_throughput_tps": 43.8,
+   "mean_tokens": 89.8,
+   "wall": 32.76
+  },
+  "2": {
+   "success": 16,
+   "ttft_median": 0.0639,
+   "ttft_p95": 0.0856,
+   "tpot_median": 0.0226,
+   "per_stream_tps": 43.2,
+   "agg_throughput_tps": 85.8,
+   "mean_tokens": 90.6,
+   "wall": 16.88
+  },
+  "4": {
+   "success": 16,
+   "ttft_median": 0.0651,
+   "ttft_p95": 0.0944,
+   "tpot_median": 0.0228,
+   "per_stream_tps": 42.9,
+   "agg_throughput_tps": 154.9,
+   "mean_tokens": 93.2,
+   "wall": 9.62
+  },
+  "8": {
+   "success": 16,
+   "ttft_median": 0.0875,
+   "ttft_p95": 0.1055,
+   "tpot_median": 0.0227,
+   "per_stream_tps": 42.7,
+   "agg_throughput_tps": 279.0,
+   "mean_tokens": 94.8,
+   "wall": 5.44
+  },
+  "16": {
+   "success": 16,
+   "ttft_median": 0.1741,
+   "ttft_p95": 0.1787,
+   "tpot_median": 0.0233,
+   "per_stream_tps": 39.9,
+   "agg_throughput_tps": 525.4,
+   "mean_tokens": 91.1,
+   "wall": 2.78
+  },
+  "32": {
+   "success": 16,
+   "ttft_median": 0.1569,
+   "ttft_p95": 0.1636,
+   "tpot_median": 0.0234,
+   "per_stream_tps": 39.9,
+   "agg_throughput_tps": 556.4,
+   "mean_tokens": 87.1,
+   "wall": 2.51
+  }
+ }
+}

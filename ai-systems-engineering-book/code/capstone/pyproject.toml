@@ -1,0 +1,19 @@
+[project]
+name = "capstone"
+version = "0.1.0"
+description = "Ch60 capstone: production AI agent platform skeleton — internal knowledge assistant (RAG + permission + audit), assembled from ch08/11/19/29/33 + eval-runner"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.7,<3",
+    "httpx>=0.27",
+]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["uv_build>=0.7"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "capstone"

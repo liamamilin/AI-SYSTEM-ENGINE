@@ -1,0 +1,214 @@
+---
+title: "Model Gateway and Routing（模型网关与路由）"
+---
+
+## 本章要解决的问题
+
+一个团队的真实经历：第一版产品硬编码 OpenAI；三个月后为了省钱接了国产模型，改了 40 处调用代码；又三个月后模型供应商宣布涨价，切回 OpenAI 再改 40 处；半年后想给隐私敏感客户上本地模型——发现要改的不止 40 处，还有散落各处的重试、超时、格式处理逻辑，**每一处的实现还不一样**（有的重试 2 次，有的 5 次，有的不重试）。
+
+问题不在"用了哪个模型"，在于**模型调用没有统一入口**。本章组装 Part 1 的全部成果：第 7 章的 Provider 需求、第 10 章的可靠性层、第 9 章的并发纪律——收拢为一个网关：Provider 抽象、约束路由、回退链（带降级标记）、metrics 落盘。本章是正式代码项目（11 个测试 + live 冒烟全部通过），也是 Part 1 的收官：从这里开始，"换模型"是改配置，不是改代码。
+
+## 学习目标
+
+完成本章后，你能够：
+
+- 设计 Provider 抽象：统一接口、隔离端点差异（含思考控制这类隐蔽差异）；
+- 用约束路由做模型选择：质量/成本/隐私三维决策表；
+- 实现带降级标记的回退链，并解释"静默降级为什么是禁区"；
+- 把调用 metrics 落盘，为第 36 章的可观测体系打地基。
+
+## 前置知识
+
+第 7 章（结构化输出、client 抽象雏形）、第 10 章（重试策略、回退、幂等）。
+
+## 问题背景
+
+网关的价值不是"多个类"，是三个工程问题的唯一解：
+
+1. **端点差异的收容所**。实测例子（本书开发中真实发生）：Ollama 的 OpenAI-compatible 端点**忽略思考控制**，本地必须走原生 API——这个差异应该被网关里的 Provider 吸收，而不是让 40 处调用代码各自处理。同类差异还有：工具调用支持度、reasoning 字段、错误码语义、限流规则。
+2. **策略的唯一执行点**。重试、超时、回退、预算守卫——策略在网关执行一次，全体调用受益；散落在调用方，策略形同虚设（每处的实现漂移就是第 10 章案例一的温床）。
+3. **测量的必经之路**。所有调用经过网关 = metrics 天然完整（模型/延迟/token/成本/降级标记）。没有网关，你要在每个调用点埋点——而总会有漏的。
+
+## 核心概念
+
+### Provider 抽象
+
+```python
+class LLMClient(Protocol):
+    def complete(messages, *, temperature, max_tokens) -> Completion: ...
+```
+
+接口刻意最小（第 11 章 PLAN 的"不过度抽象"原则）：一个方法、显式参数。三个实现：`OllamaProvider`（原生 API，吸收思考控制差异）、`OpenAICompatProvider`（云/自建 vLLM）、`FakeProvider`（确定性假实现——测试与离线开发的基石，"测试不用花钱"从此是默认）。
+
+**抽象的边界**：网关只统一"一次调用"，不统一"一次会话"（多轮状态管理属于 Runtime，第 21 章）也不统一"工具协议"（第 39 章）。抽象每大一寸，供应商差异的吸收成本就多一寸。
+
+### 约束路由：三维决策表
+
+```text
+维度        取值                 典型决策
+质量        high/standard/economy  关键任务→high；批量离线→economy
+成本        cost_per_1k            成本敏感路由 economy 优先
+隐私        local/cloud            隐私敏感→local 硬约束（不可协商）
+```
+
+路由输出的是**有序候选链**——第一候选即首选，余下自动成为回退链（一套数据结构两个用途）。三条硬规则（测试覆盖）：
+
+1. `privacy_local_only` 且无本地层 → **直接报错**，不静默走云（隐私约束是边界，不是偏好）；
+2. `prefer_economy` 按成本排序；`prefer_quality` 按质量排序；
+3. 默认（无偏好）按质量序——网关的默认值应该偏保守（质量优先），省钱是显式决策。
+
+### 回退与降级标记
+
+第 10 章的案例三（静默降级吃掉质量）在这里变成**类型系统强制**：
+
+```python
+if i > 0:
+    completion.degraded = True   # 走了回退层 → 必须标记
+```
+
+调用方拿到 `degraded=True` 的响应时可以：给用户弱化提示、采样更多评测、触发告警。**标记是机制，使用是策略**——但机制必须先存在。实测验证（live 冒烟）：构造云端宕机 → 网关回退本地模型真实回答 → `degraded=True` → metrics 记录两条（cloud-broken: false, local-9b: true）。
+
+### Metrics：可观测的第一块砖
+
+每次调用尝试（成功或失败）写一条：
+
+```json
+{"ts": ..., "tier": "cloud-broken", "ok": false, "latency_ms": 0.0,
+ "degraded": false, "prompt_tokens": 0, "completion_tokens": 0}
+```
+
+jsonl 起步（零依赖、可 grep、可离线分析），第 36 章升级为指标聚合与告警。**从第一天记录**——历史数据的缺失无法补拍。
+
+## 心智模型
+
+```text
+Gateway = Provider 抽象（吸收差异） + 约束路由（三维决策） + 回退链（强制标记） + metrics（必经之路）
+
+失败定位模型：
+  换模型要改业务代码         → Provider 抽象泄漏（有调用方绕过了网关）
+  隐私数据出现在云端         → 路由没有硬约束 或 有调用方绕过网关
+  "系统正常"但质量下滑       → 回退没标记 或 指标没按模型分组
+  成本异常                   → metrics 在，但没有按 tier 聚合视图（第 40 章）
+```
+
+## Minimal Implementation / Engineering Version
+
+`code/ch11-model-gateway/`（已全部实测）：
+
+```text
+src/model_gateway/
+├── base.py       # Completion + 协议 + 三个 Provider（Ollama/OpenAICompat/Fake）
+├── router.py     # Tier + RequestConstraints + Router（排序 = 回退链）
+├── retry.py      # Ch10 的类型化重试（Retryable/NonRetryable + 退避抖动）
+└── gateway.py    # 组装 + degraded 强制标记 + metrics jsonl
+tests/            # 11 个测试：路由排序/隐私边界/重试成功/上限/快速失败/回退标记×2/metrics/全宕
+```
+
+关键测试（映射设计约束）：
+
+```text
+test_route_privacy_violation_raises      # 隐私是硬边界
+test_gateway_fallback_marks_degraded     # 回退必须可见
+test_non_retryable_fails_fast            # 不可重试错误不浪费尝试
+test_gateway_metrics_written             # 测量必经之路
+```
+
+## 评测：live 冒烟（实测，2026-09-09）
+
+真实链路：`FakeProvider(宕机)` + `OllamaProvider(qwen3.5:9b)`，问"用一句话说明什么是 KV Cache"：
+
+```text
+answer:   "KV Cache 是一种在 Transformer 模型中缓存自注意力机制计算出的键/值
+           矩阵的技术，旨在避免重复计算…"
+degraded: True
+metrics:  2 条记录（cloud-broken: ok=false → local-9b: ok=true）
+```
+
+三个观察：回退链在真实宕机下正确走通；降级标记真实传递；metrics 完整记录了失败与成功两次尝试。**这个 20 行的冒烟脚本覆盖了网关的三个核心承诺。**
+
+## Failure Cases
+
+**案例一：抽象泄漏。** 某团队建了网关，但一个紧急需求的工程师"临时"直连了 SDK。三个月后该端点废弃，这处调用没人记得。修复：禁止业务代码 import SDK（CI 检查 import 白名单）+ 网关暴露足够的逃生舱（raw passthrough）减少绕过动机。教训：**抽象只在被一致使用时有效；绕过的成本必须高于走正门。**
+
+**案例二：路由表过期。** 网关配置里"economy 层"指向的廉价模型被供应商下线，路由静默跳过该层（enabled=false 逻辑），成本悄悄涨了 60%——没人发现，因为没有人看"按 tier 的成本分布"。修复：层健康巡检 + 成本视图告警（第 40 章）。教训：**配置是资产也是负债，需要巡检。**
+
+**案例三：降级标记被忽略。** 网关正确打了 `degraded=True`，但调用方没人检查这个字段，客服质量下滑两周才发现走了本地模型。修复：degraded 率进核心监控看板 + 超阈值告警。教训：**标记完成不是链路完成——从产生到消费的每一段都要有人接。**
+
+## Trade-offs
+
+- **统一抽象 vs 端点特性**：网关只暴露共同子集，端点独有能力（如某些家的缓存定价、structured outputs）要用逃生舱透传。原则：**90% 的调用走抽象，10% 的特性调用走显式逃生舱**——而不是把抽象做成万能参数袋。
+- **本地模型 vs 云模型**（Local vs API）：本地省钱、隐私、可控但吃运维（第 41–48 章）；云端省心、质量高但成本与锁定。网关让两者可组合——这个组合权本身就是第 40 章 Economics 的主要杠杆。
+- **网关复杂度 vs 团队规模**：单团队一个进程内网关（本章形态）足够；多团队才需要独立网关服务（加了一层网络延迟与运维）。**不要为了架构漂亮提前分布式。**
+
+## Production Considerations
+
+- **配置文件化**：本章层定义用代码构造（教学清晰），生产必须移入 `configs/gateway.toml`——模型清单变更不该改代码（项目 README 已列为待实现项）；
+- **预算守卫入网关**：每请求 token 预算检查（第 5 章）+ 每 tier 成本上限（第 40 章）都在网关执行；
+- **metrics 的存储演进**：jsonl → 按日轮转 → 指标聚合（第 36 章）；单文件 jsonl 在万级 QPS 下会成瓶颈，及时换存储；
+- **并发纪律继承**：网关自身不做并发控制（那是调用方的信号量，第 9 章），但要在 metrics 里能看出并发行为（latency 分布）。
+
+## Hands-on Experiment
+
+```bash
+cd code/ch11-model-gateway
+uv venv -p 3.12 .venv && uv pip install -p .venv/bin/python -e . pytest openai httpx
+.venv/bin/python -m pytest -q      # 11 passed
+```
+
+live 实验（需要本地 Ollama）：
+
+```python
+from model_gateway.base import OllamaProvider, FakeProvider
+from model_gateway.gateway import Gateway, GatewayConfig
+from model_gateway.router import Router, Tier, RequestConstraints
+from model_gateway.retry import RetryPolicy
+
+cloud_broken = Tier("cloud", FakeProvider([], fail_first=99), "high", 3.0, "cloud")
+local = Tier("local", OllamaProvider(model="qwen3.5:9b-mlx"), "standard", 0.0, "local")
+gw = Gateway(GatewayConfig(router=Router([cloud_broken, local]),
+                           retry=RetryPolicy(max_attempts=1, base_delay=0.01)))
+out = gw.complete([{"role": "user", "content": "用一句话说明什么是KV Cache"}],
+                  constraints=RequestConstraints(), max_tokens=150)
+print(out.text, "| degraded:", out.degraded)
+```
+
+**实验二**：把 `privacy_local_only=True` 传给只含云端层的 Router，观察 ValueError——亲手确认隐私约束的硬度。
+
+## Exercises
+
+**Concept**：为什么网关的默认路由排序是"质量优先"而不是"成本优先"？从故障成本的角度论证。
+
+**Coding**：给 Gateway 加"预算守卫"：complete 前用简单 token 估算，超预算直接拒绝（不发起调用）。写测试：预算内通过、超预算抛错且 metrics 记录 rejected。
+
+**Debugging**：网关上线后，某天 metrics 显示 30% 调用走 economy 层而配置里它排第二候选。给出排查步骤（提示：看是哪类 constraints 触发的路由）。
+
+**Design**：为一个"客服（交互）+ 夜间批量摘要"双业务设计 tier 表：几层、每层什么模型、约束怎么分。说明每个决策的成本/质量依据。
+
+**Evaluation**：设计"网关健康度"三指标（建议方向：各层成功率、degraded 率、P95 延迟分层对比），并说明各自捕捉哪类故障。
+
+## 小结
+
+- **Problem**：模型调用散落各处，端点差异、策略漂移、测量盲区。
+- **Solution**：Provider 抽象 + 约束路由（输出即回退链）+ 强制降级标记 + metrics 必经之路。
+- **Trade-off**：抽象覆盖面 vs 逃生舱；本地 vs 云的组合权是成本与质量的核心杠杆。
+- **Evaluation**：11 测试 + live 冒烟（回退/标记/ metrics 全部实证）；三条硬规则（隐私硬边界、降级可见、测量必经）全部有测试锚定。
+
+## 连接下一章
+
+Part 1 完成：你能把"一次调用"做成可靠、可路由、可测量的工程对象。但一组新问题出现了：这个调用**行为对不对**？改了 prompt 是变好还是变坏？换模型是赚是亏？——没有测量，一切优化都是赌博。Part 2 从根上回答：**为什么 Eval 是核心工程**（第 12 章），然后建设整套评测基础设施。
+
+## References
+
+- OpenAI-compatible 各端点差异以官方文档为准（思考控制、工具支持、structured outputs）：https://github.com/ollama/ollama/blob/main/docs/openai.md — Last verified: 2026-09-09
+- 本章实测：`code/ch11-model-gateway/`（11 测试 + live 冒烟，见 LAST_TESTED.md）
+- 设计原则引用：本书 CODE_STANDARD §10（禁止过度抽象）
+
+## Mental Model Check
+
+**结构模型**：四件套网关（抽象/路由/回退/测量），Provider 在最底层吸收差异。
+
+**因果模型**：调用统一入网关→策略单点执行+测量天然完整；抽象泄漏→策略与测量同时失效——两者是同一枚硬币。
+
+**决策模型**：默认质量优先；省钱/隐私是显式约束；回退必标记；逃逸舱为特性保留。
+
+**迁移检验**：新供应商"XYZ"发布，号称 OpenAI-compatible。接入成本你能预估吗？——写一个 `XYZProvider`（继承协议），跑一遍差异清单（思考控制？工具？错误码语义？限流规则？），加进 tier 表，用现有 11 个测试验证回退与标记逻辑不受影响。**半天内完成的接入，因为机制是稳定的，变的只是适配层。**

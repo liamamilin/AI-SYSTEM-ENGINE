@@ -1,0 +1,23 @@
+{
+ "model": "Qwen/Qwen2.5-0.5B-Instruct",
+ "pairs": 30,
+ "epochs": 3,
+ "beta": 0.1,
+ "wall_seconds": 14.0,
+ "final_loss": 0.0235,
+ "final_margin": 4.1627,
+ "log": [
+  [
+   5,
+   1.1824,
+   0.3467
+  ],
+  [
+   10,
+   4.1627,
+   0.0235
+  ]
+ ],
+ "peak_vram_gb": 6.86,
+ "ts": "2026-09-10T11:51:33.630050+00:00"
+}

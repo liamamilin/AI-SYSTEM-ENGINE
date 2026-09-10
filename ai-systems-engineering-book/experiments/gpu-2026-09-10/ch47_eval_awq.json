@@ -1,0 +1,230 @@
+{
+ "meta": {
+  "model": "Qwen/Qwen2.5-7B-Instruct-AWQ",
+  "base_url": "http://localhost:8000/v1",
+  "tag": "awq",
+  "prompt": "repair-system-v1 (ch07, first-pass)",
+  "ts": "2026-09-10T12:26:53.810702+00:00"
+ },
+ "metrics": {
+  "n": 30,
+  "schema_ok": 0.9666666666666667,
+  "category_accuracy": 0.7666666666666667,
+  "needs_human_accuracy": 0.7333333333333333,
+  "failures": {
+   "summary": 1
+  }
+ },
+ "rows": [
+  {
+   "id": "t01",
+   "schema_ok": true,
+   "fail_reason": "ok",
+   "category_ok": true,
+   "needs_human_ok": true
+  },
+  {
+   "id": "t02",
+   "schema_ok": true,
+   "fail_reason": "ok",
+   "category_ok": true,
+   "needs_human_ok": true
+  },
+  {
+   "id": "t03",
+   "schema_ok": true,
+   "fail_reason": "ok",
+   "category_ok": false,
+   "needs_human_ok": true
+  },
+  {
+   "id": "t04",
+   "schema_ok": true,
+   "fail_reason": "ok",
+   "category_ok": true,
+   "needs_human_ok": true
+  },
+  {
+   "id": "t05",
+   "schema_ok": true,
+   "fail_reason": "ok",
+   "category_ok": true,
+   "needs_human_ok": false
+  },
+  {
+   "id": "t06",
+   "schema_ok": true,
+   "fail_reason": "ok",
+   "category_ok": true,
+   "needs_human_ok": true
+  },
+  {
+   "id": "t07",
+   "schema_ok": true,
+   "fail_reason": "ok",
+   "category_ok": true,
+   "needs_human_ok": true
+  },
+  {
+   "id": "t08",
+   "schema_ok": true,
+   "fail_reason": "ok",
+   "category_ok": true,
+   "needs_human_ok": true
+  },
+  {
+   "id": "t09",
+   "schema_ok": true,
+   "fail_reason": "ok",
+   "category_ok": true,
+   "needs_human_ok": true
+  },
+  {
+   "id": "t10",
+   "schema_ok": true,
+   "fail_reason": "ok",
+   "category_ok": true,
+   "needs_human_ok": true
+  },
+  {
+   "id": "t11",
+   "schema_ok": true,
+   "fail_reason": "ok",
+   "category_ok": true,
+   "needs_human_ok": true
+  },
+  {
+   "id": "t12",
+   "schema_ok": true,
+   "fail_reason": "ok",
+   "category_ok": true,
+   "needs_human_ok": true
+  },
+  {
+   "id": "t13",
+   "schema_ok": true,
+   "fail_reason": "ok",
+   "category_ok": true,
+   "needs_human_ok": false
+  },
+  {
+   "id": "t14",
+   "schema_ok": true,
+   "fail_reason": "ok",
+   "category_ok": false,
+   "needs_human_ok": true
+  },
+  {
+   "id": "t15",
+   "schema_ok": true,
+   "fail_reason": "ok",
+   "category_ok": true,
+   "needs_human_ok": true
+  },
+  {
+   "id": "t16",
+   "schema_ok": true,
+   "fail_reason": "ok",
+   "category_ok": true,
+   "needs_human_ok": false
+  },
+  {
+   "id": "t17",
+   "schema_ok": true,
+   "fail_reason": "ok",
+   "category_ok": true,
+   "needs_human_ok": false
+  },
+  {
+   "id": "t18",
+   "schema_ok": true,
+   "fail_reason": "ok",
+   "category_ok": true,
+   "needs_human_ok": true
+  },
+  {
+   "id": "t19",
+   "schema_ok": true,
+   "fail_reason": "ok",
+   "category_ok": true,
+   "needs_human_ok": true
+  },
+  {
+   "id": "t20",
+   "schema_ok": true,
+   "fail_reason": "ok",
+   "category_ok": true,
+   "needs_human_ok": true
+  },
+  {
+   "id": "t21",
+   "schema_ok": true,
+   "fail_reason": "ok",
+   "category_ok": true,
+   "needs_human_ok": true
+  },
+  {
+   "id": "t22",
+   "schema_ok": true,
+   "fail_reason": "ok",
+   "category_ok": true,
+   "needs_human_ok": true
+  },
+  {
+   "id": "t23",
+   "schema_ok": true,
+   "fail_reason": "ok",
+   "category_ok": false,
+   "needs_human_ok": true
+  },
+  {
+   "id": "t24",
+   "schema_ok": true,
+   "fail_reason": "ok",
+   "category_ok": false,
+   "needs_human_ok": true
+  },
+  {
+   "id": "t25",
+   "schema_ok": true,
+   "fail_reason": "ok",
+   "category_ok": true,
+   "needs_human_ok": false
+  },
+  {
+   "id": "t26",
+   "schema_ok": true,
+   "fail_reason": "ok",
+   "category_ok": true,
+   "needs_human_ok": false
+  },
+  {
+   "id": "t27",
+   "schema_ok": true,
+   "fail_reason": "ok",
+   "category_ok": false,
+   "needs_human_ok": false
+  },
+  {
+   "id": "t28",
+   "schema_ok": false,
+   "fail_reason": "summary",
+   "category_ok": false,
+   "needs_human_ok": false
+  },
+  {
+   "id": "t29",
+   "schema_ok": true,
+   "fail_reason": "ok",
+   "category_ok": true,
+   "needs_human_ok": true
+  },
+  {
+   "id": "t30",
+   "schema_ok": true,
+   "fail_reason": "ok",
+   "category_ok": false,
+   "needs_human_ok": true
+  }
+ ]
+}

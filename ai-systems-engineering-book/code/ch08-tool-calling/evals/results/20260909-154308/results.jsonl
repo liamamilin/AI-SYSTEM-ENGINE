@@ -1,0 +1,15 @@
+{"id": "e01", "first_tool": "calculator", "tool_choice_ok": true, "no_hallucination": true, "answer_ok": true, "rounds": 2, "args_ok": true}
+{"id": "e02", "first_tool": "calculator", "tool_choice_ok": true, "no_hallucination": true, "answer_ok": true, "rounds": 2, "args_ok": true}
+{"id": "e03", "first_tool": "get_weather", "tool_choice_ok": true, "no_hallucination": true, "answer_ok": true, "rounds": 2, "args_ok": true}
+{"id": "e04", "first_tool": "get_weather", "tool_choice_ok": true, "no_hallucination": true, "answer_ok": true, "rounds": 2, "args_ok": true}
+{"id": "e05", "first_tool": "get_weather", "tool_choice_ok": true, "no_hallucination": true, "answer_ok": true, "rounds": 2, "args_ok": true}
+{"id": "e06", "first_tool": "calculator", "tool_choice_ok": true, "no_hallucination": true, "answer_ok": true, "rounds": 2, "args_ok": true}
+{"id": "e07", "first_tool": null, "tool_choice_ok": false, "no_hallucination": true, "answer_ok": true, "rounds": 1, "args_ok": true}
+{"id": "e08", "first_tool": "get_weather", "tool_choice_ok": true, "no_hallucination": true, "answer_ok": true, "rounds": 2, "args_ok": true}
+{"id": "e09", "first_tool": "calculator", "tool_choice_ok": true, "no_hallucination": true, "answer_ok": true, "rounds": 2, "args_ok": true}
+{"id": "e10", "first_tool": null, "tool_choice_ok": true, "no_hallucination": true, "answer_ok": true, "rounds": 1, "args_ok": true}
+{"id": "e11", "first_tool": null, "tool_choice_ok": true, "no_hallucination": true, "answer_ok": true, "rounds": 1, "args_ok": true}
+{"id": "e12", "first_tool": null, "tool_choice_ok": true, "no_hallucination": true, "answer_ok": true, "rounds": 1, "args_ok": true}
+{"id": "e13", "first_tool": "get_weather", "tool_choice_ok": true, "no_hallucination": true, "answer_ok": true, "rounds": 3, "args_ok": true}
+{"id": "e14", "first_tool": "calculator", "tool_choice_ok": true, "no_hallucination": true, "answer_ok": true, "rounds": 2, "args_ok": true}
+{"id": "e15", "first_tool": "get_weather", "tool_choice_ok": true, "no_hallucination": true, "answer_ok": true, "rounds": 2, "args_ok": true}

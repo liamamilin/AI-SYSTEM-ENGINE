@@ -1,0 +1,108 @@
+project:
+  type: book
+  site-url: https://liamamilin.github.io/AI-SYSTEM-ENGINE/
+  output-dir: _book
+
+book:
+  title: "AI Systems Engineering"
+  subtitle: "从 LLM 到 Agent、Serving 与 Post-training"
+  author: "米霖"
+  date: today
+  chapters:
+    - index.qmd
+    - chapters/part-00-foundations/ch01-ai-stack.qmd
+    - chapters/part-00-foundations/ch02-system-components.qmd
+    - chapters/part-00-foundations/ch03-problem-framing.qmd
+    - chapters/part-00-foundations/ch04-workflow-vs-agent.qmd
+    - chapters/part-01-llm-interface/ch05-llm-request-model.qmd
+    - chapters/part-01-llm-interface/ch06-instruction-prompt.qmd
+    - chapters/part-01-llm-interface/ch07-structured-output.qmd
+    - chapters/part-01-llm-interface/ch08-tool-calling.qmd
+    - chapters/part-01-llm-interface/ch09-streaming-async.qmd
+    - chapters/part-01-llm-interface/ch10-reliability.qmd
+    - chapters/part-01-llm-interface/ch11-model-gateway.qmd
+    - chapters/part-02-evaluation/ch12-why-eval.qmd
+    - chapters/part-02-evaluation/ch13-eval-dataset.qmd
+    - chapters/part-02-evaluation/ch14-component-eval.qmd
+    - chapters/part-02-evaluation/ch15-system-eval.qmd
+    - chapters/part-02-evaluation/ch16-llm-as-judge.qmd
+    - chapters/part-02-evaluation/ch17-reproducibility.qmd
+    - chapters/part-03-agent-systems/ch18-what-is-agent.qmd
+    - chapters/part-03-agent-systems/ch19-agent-loop.qmd
+    - chapters/part-03-agent-systems/ch20-tool-runtime.qmd
+    - chapters/part-03-agent-systems/ch21-state.qmd
+    - chapters/part-03-agent-systems/ch22-planning.qmd
+    - chapters/part-03-agent-systems/ch23-memory.qmd
+    - chapters/part-03-agent-systems/ch24-context-management.qmd
+    - chapters/part-03-agent-systems/ch25-human-in-the-loop.qmd
+    - chapters/part-03-agent-systems/ch26-multi-agent.qmd
+    - chapters/part-04-context-data/ch27-context-engineering.qmd
+    - chapters/part-04-context-data/ch28-retrieval-fundamentals.qmd
+    - chapters/part-04-context-data/ch29-rag-pipeline.qmd
+    - chapters/part-04-context-data/ch30-advanced-retrieval.qmd
+    - chapters/part-04-context-data/ch31-retrieval-eval.qmd
+    - chapters/part-04-context-data/ch32-data-engineering.qmd
+    - chapters/part-05-production/ch33-ai-backend.qmd
+    - chapters/part-05-production/ch34-long-running-tasks.qmd
+    - chapters/part-05-production/ch35-reliability-engineering.qmd
+    - chapters/part-05-production/ch36-observability.qmd
+    - chapters/part-05-production/ch37-ai-security.qmd
+    - chapters/part-05-production/ch38-sandbox-permission.qmd
+    - chapters/part-05-production/ch39-mcp.qmd
+    - chapters/part-05-production/ch40-ai-economics.qmd
+    - chapters/part-06-inference/ch41-inference-fundamentals.qmd
+    - chapters/part-06-inference/ch42-gpu-memory.qmd
+    - chapters/part-06-inference/ch43-batching-scheduling.qmd
+    - chapters/part-06-inference/ch44-inference-metrics.qmd
+    - chapters/part-06-inference/ch45-quantization.qmd
+    - chapters/part-06-inference/ch46-advanced-inference.qmd
+    - chapters/part-06-inference/ch47-vllm-case-study.qmd
+    - chapters/part-06-inference/ch48-production-serving.qmd
+    - chapters/part-07-post-training/ch49-when-to-train.qmd
+    - chapters/part-07-post-training/ch50-dataset-for-post-training.qmd
+    - chapters/part-07-post-training/ch51-sft.qmd
+    - chapters/part-07-post-training/ch52-lora-qlora.qmd
+    - chapters/part-07-post-training/ch53-preference-optimization.qmd
+    - chapters/part-07-post-training/ch54-synthetic-data-distillation.qmd
+    - chapters/part-07-post-training/ch55-post-training-eval.qmd
+    - chapters/part-08-system-design/ch56-system-design-method.qmd
+    - chapters/part-08-system-design/ch57-coding-agent-case.qmd
+    - chapters/part-08-system-design/ch58-research-agent-case.qmd
+    - chapters/part-08-system-design/ch59-enterprise-knowledge-agent.qmd
+    - chapters/part-08-system-design/ch60-capstone.qmd
+    - chapters/appendix/appendix-a-python-async.qmd
+    - chapters/appendix/appendix-b-docker-linux.qmd
+    - chapters/appendix/appendix-c-postgres-pgvector.qmd
+    - chapters/appendix/appendix-d-gpu-basics.qmd
+    - chapters/appendix/appendix-e-multimodal.qmd
+    - chapters/appendix/appendix-f-framework-comparison.qmd
+    - chapters/appendix/appendix-g-glossary.qmd
+    - chapters/appendix/appendix-h-ecosystem.qmd
+    - references.qmd
+  search: true
+  page-navigation: true
+  reader-mode: true
+
+bibliography: references.bib
+
+format:
+  html:
+    theme:
+      light: cosmo
+      dark: darkly
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    code-copy: true
+    code-overflow: wrap
+    smooth-scroll: true
+    anchor-sections: true
+    fig-cap-location: bottom
+    tbl-cap-location: top
+  pdf:
+    documentclass: scrreprt
+    toc: true
+    number-sections: true
+    colorlinks: true
+
+editor: visual

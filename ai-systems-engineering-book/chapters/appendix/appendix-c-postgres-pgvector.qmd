@@ -1,0 +1,41 @@
+---
+title: "附录 C：PostgreSQL / pgvector 速查（Appendix C: PostgreSQL & pgvector）"
+---
+
+# 附录 C：PostgreSQL / pgvector 速查
+
+本书的数据底座（第 21 章状态、第 29 章 RAG、第 33 章后端）。
+
+## 启用与建表
+
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE TABLE chunks (
+  id bigserial PRIMARY KEY,
+  text text NOT NULL,
+  source text NOT NULL,           -- 第 29 章：溯源
+  acl text NOT NULL DEFAULT 'internal',  -- 第 38 章：权限元数据
+  embedding vector(768)           -- 维度随模型（nomic=768，bge-m3=1024）
+);
+CREATE INDEX ON chunks USING hnsw (embedding vector_cosine_ops);
+```
+
+## 混合检索（第 28 章）
+
+```sql
+-- 稠密路（pgvector）
+SELECT id, text, 1 - (embedding <=> :qvec) AS score
+FROM chunks WHERE acl = ANY(:acls)          -- 权限过滤在检索层！
+ORDER BY embedding <=> :qvec LIMIT 20;
+-- 与 BM25 路（应用层或 tsvector）融合——第 28 章 hybrid
+```
+
+## 任务/状态存储（第 21/34 章）
+
+```sql
+CREATE TABLE jobs (id uuid PRIMARY KEY, status text, state jsonb, version int);
+UPDATE jobs SET version = version + 1 WHERE id = :id AND version = :v;  -- 乐观锁
+```
+
+纪律：向量索引类型（hnsw/ivfflat）与召回调优参考 pgvector 文档（Last verified: 2026-09-09）；密级数据加密存储参考第 32 章隐私纪律。

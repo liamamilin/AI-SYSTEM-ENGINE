@@ -1,0 +1,35 @@
+---
+title: "附录 B：Docker / Linux 速查（Appendix B: Docker & Linux Refresher）"
+---
+
+# 附录 B：Docker / Linux 速查
+
+## 本书用到的最小 Docker 集
+
+```bash
+# 单容器（Postgres + pgvector，Appendix C 的标准起法）
+docker run -d --name pg -e POSTGRES_PASSWORD=dev -p 5432:5432 \
+  pgvector/pgvector:pg17
+
+# 多服务（AI 后端三件套：app/worker/postgres）
+docker compose up -d          # compose 文件：服务/依赖/卷/网络
+docker compose logs -f app
+
+# 沙箱（Ch38 L2 的默认姿态：先全关）
+docker run --rm --network=none --read-only \
+  --memory=512m --cpus=1 --cap-drop=ALL my-sandbox
+```
+
+纪律：沙箱默认最小连通（网络全关、按需开）；compose 里服务依赖用 `depends_on: condition: service_healthy`；数据一律挂卷。
+
+## Linux 最小集
+
+```bash
+systemctl status <svc>      # 服务状态
+journalctl -u <svc> -f      # 日志跟踪
+ss -tlnp | grep 5432        # 端口占用
+kill -TERM <pid>            # 优雅停（第 34 章）；-9 是破坏
+df -h / du -sh *            # 磁盘（模型/日志吃盘大户）
+```
+
+K8s 部署（第 48 章 serving）超出本速查范围，生产参考官方部署文档（Last verified: 2026-09-09）。GPU 速查见附录 D。

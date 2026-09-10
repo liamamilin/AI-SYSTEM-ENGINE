@@ -1,0 +1,1 @@
+{"entries":[],"headings":["本章要解决的问题","学习目标","前置知识","问题背景","核心概念","协议让模型说机器话","状态回注state-与对话史的分离","停止条件双层机制","有界恢复区分可恢复与-stall","心智模型","minimal-implementation","暴露问题实测中它在哪里挣扎","evaluationmock-live-双层验证","failure-cases","trade-offs","production-considerations","hands-on-experiment","exercises","小结","连接下一章","references","mental-model-check"],"options":{"chapters":true}}

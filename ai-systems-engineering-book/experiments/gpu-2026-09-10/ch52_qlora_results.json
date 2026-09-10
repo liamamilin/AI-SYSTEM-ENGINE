@@ -1,0 +1,43 @@
+{
+ "meta": {
+  "model": "Qwen/Qwen2.5-7B-Instruct",
+  "gpu": "NVIDIA GeForce RTX 4080 SUPER",
+  "vram_total_gb": 31.48,
+  "ts": "2026-09-10T11:31:01.283971+00:00"
+ },
+ "qlora": {
+  "load_seconds": 11.1,
+  "weights_gb_nf4": 5.45,
+  "peak_vram_gb": 8.56,
+  "trainable_params": 40370176,
+  "trainable_pct": 0.919,
+  "steps": 20,
+  "batch_tokens": 0,
+  "seconds": 10.6,
+  "steps_per_s": 1.88,
+  "loss_first": 3.1625,
+  "loss_last": 1.3573,
+  "loss_curve": [
+   3.1625,
+   2.384,
+   2.0674,
+   1.6412,
+   1.3106,
+   1.0924,
+   0.7782,
+   1.8588,
+   3.9352,
+   1.4111,
+   0.54,
+   0.4727,
+   0.4509,
+   0.3745,
+   0.3453,
+   0.2585,
+   0.3404,
+   0.2263,
+   1.7421,
+   1.3573
+  ]
+ }
+}

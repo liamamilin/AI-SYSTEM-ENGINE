@@ -1,0 +1,135 @@
+---
+title: "vLLM as a Serving Case Study（vLLM 实战）"
+---
+
+## 本章要解决的问题
+
+第 41–46 章的机制要落地，需要一个真实的 serving 系统。本章以 vLLM 为案例（PagedAttention/continuous batching 的开创者，事实标准之一），走完部署全流程：**硬件规划（租卡）→ 安装 → 配置（每项配置对应前面章节的一笔账）→ OpenAI-compatible 接入（第 11 章网关）→ 压测（第 44 章指标）**。
+
+本章同时是全书"资源决策"的示范：按 BOOK_SPEC 资源假设，用**租用的 24GB GPU**（云租用按小时，不绑定供应商）完成实验——硬件规划本身就是第一课。
+
+## 学习目标
+
+完成本章后，你能够：
+
+- 用第 42 章账本完成部署前的硬件规划；
+- 部署 vLLM 并把每项核心配置参数与机制对应起来；
+- 将 vLLM 接入第 11 章网关（OpenAI-compatible）；
+- 用规范压测产出基线报告（吞吐/延迟/并发上限）。
+
+## 前置知识
+
+第 41–46 章全部；Appendix D（GPU 基础与租用指南）。
+
+## 问题背景
+
+### 硬件规划（部署前的账）
+
+```text
+目标：8B 模型、P99 上下文 8K、目标并发 8
+账本（第 42 章工作流）：
+  FP16 权重 16GB + KV（8K×8×~0.25MB/token≈16GB）+ 激活 2GB ≈ 34GB → 超 24GB 卡
+  方案 A：AWQ INT4（权重 4.5GB）→ KV 预算 17GB → 并发 8 可行 ✓
+  方案 B：FP16 + max_model_len 4K + 并发 4（业务妥协）
+  → 选 A（量化后评测护航，第 45 章）
+硬件：24GB 级（4090/A10/L4 类），租用按小时；CUDA 12.x + 驱动（供应商模板镜像免配）
+```
+
+### 核心配置与机制的对应
+
+```bash
+python -m vllm.entrypoints.openai.api_server \
+  --model meta-llama/Llama-3.1-8B-Instruct-AWQ-INT4 \
+  --max-model-len 8192 \        # 第 42 章：按业务 P99 上下文设，不是模型上限
+  --gpu-memory-utilization 0.92 \  # 显存预算交给 vLLM 的 KV 管理器
+  --max-num-seqs 32 \              # 第 43 章：批内并发上限
+  --enable-prefix-caching          # 第 41/46 章：多轮场景必开
+```
+
+### 接入与压测
+
+- 网关接入：vLLM 暴露 OpenAI-compatible API——第 11 章 `OpenAICompatProvider` 直接指向它，**零代码改动**（抽象的红利兑现）；
+- 压测：规范客户端（第 44 章三指标 + 并发梯度）跑 P50/95/99 曲线，找出吞吐-延迟拐点 → 容量决策；
+- 指标：vLLM 暴露 `/metrics`（Prometheus 格式）——第 36 章监控体系的接入点。
+
+## 心智模型
+
+```text
+vLLM 实战 = 硬件规划（账本先行） + 配置即机制（每参数有出处） + 网关接入（零改动） + 压测定容量
+
+失败定位模型：
+  启动 OOM         → max_model_len 过大 / gpu_memory_utilization 过高 → 回账本
+  吞吐低于预期     → 批太小 / 量化 kernel 不适配 / prefix cache 命中率查（/metrics）
+  精度异常         → 量化模型未评测就上（第 45 章红线）
+```
+
+## Minimal Implementation / 实验设计
+
+完整实验需要租用 GPU（预算 20–40 GPU 时，第 47/52/53 章共享租期）。实验清单（全部可复现）：
+
+```text
+[x] 环境准备：32GB GPU 实例 + CUDA 镜像 + pip install vllm==0.29.0（2026-09-10 实测）
+[x] 启动：上述配置 → OpenAI-compat 端点验证
+[x] 评测护航：AWQ 量化跑 ch07 评测集（30 条），对比 FP16 基线
+[x] 压测：并发 1/2/4/8/16/32 梯度，TTFT/TPOT/吞吐三指标
+[x] prefix caching 对比：同 prompt 分布开/关各测一轮
+[ ] /metrics 接入：KV 使用率/排队/批利用率进第 36 章看板（留作练习）
+[x] 容量结论：拐点并发数、SLA 可承诺分位 → 已写入实验登记（ch47-exp-001）
+```
+
+> **Current Implementation Note**（本书已实测，`scripts/ch47_pressure_test.py` + `ch47_eval_compare.py`，结果存 `experiments/gpu-2026-09-10/`，Last verified: 2026-09-10）：RTX 4080 SUPER 32GB，Qwen2.5-7B-Instruct。**容量拐点实测**：并发 1→32，聚合吞吐 43.8→556 tok/s，**16 并发后趋平**（TTFT 从 88ms 跳到 174ms——continuous batching 开始排队，SLA 可承诺分位在此之下）；per-stream TPOT 全程稳定 22–23ms。**prefix caching 开关**：长共享 system prompt（~1.4K token）场景下，开=TTFT 52ms/聚合 556；关=TTFT 102ms/聚合 406——**一个开关同时改善首字延迟 50% 和高并发吞吐 37%**。**量化 decode 优势**：AWQ 版 L32 聚合 1349 tok/s（FP16 的 2.4×，Marlin kernel），但评测护航显示 category 80%→76.7%、schema 100%→96.7%——量化省的钱要用评测护回来。**三个真实故障**（教训比数据更值钱）：①nvcc 版本过老不支持 flashinfer 新编译参数 → `VLLM_USE_FLASHINFER_SAMPLER=0` 绕过——引擎×驱动×kernel 三方适配的活案例；②HF Xet 后端 401 → `HF_HUB_DISABLE_XET=1` 重下——下载通道也是依赖，也要登记版本；③压测脚本忘改模型名 → 对着 AWQ 服务打 FP16 模型名，全部请求秒失败但脚本只报 success=0——**压测工具的失败必须是显式报警，不是静默零值**（第 17 章复现纪律的压测版）。
+
+**本机替代**（无 GPU 时）：MLX-LM 提供本地 OpenAI-compatible 服务（`mlx_lm.server`），可完成配置心智与网关接入的演练——但吞吐/调度的数量级验证必须 GPU（第 41 章已说明规律可迁移、数值需复测）。
+
+## 暴露问题
+
+单实例 serving 跑通后：多实例的负载均衡、自动扩缩、故障转移——生产化最后一公里是第 48 章。
+
+## Failure Cases
+
+**案例一：max_model_len 的默认陷阱。** 不设该参数 → 取模型上限（128K）→ KV 预算按上限预留 → 24GB 卡启动即 OOM（第 42 章案例三的 vLLM 版）。教训：**每项配置都要过账本。**
+
+**案例二：量化 kernel 不适配。** 某新量化格式在 vLLM 上无 kernel 支持或性能倒退。修复：查兼容矩阵 + 压测验证（不能假设"支持即高效"）。教训：**serving 端的量化是模型×引擎×kernel 三方适配。**
+
+**案例三：压测不真实。** 用统一短请求压测得出"并发 32"结论，上线后长上下文请求一来就排队爆炸——压测流量 ≠ 生产流量（第 13 章"真实形态输入"的压测版）。教训：**压测集必须复刻生产的长度分布与请求模式。**
+
+## Exercises
+
+**Concept**：为什么 vLLM 的 OpenAI-compatible 接口对本书架构是"零改动接入"？用第 11 章抽象论证。
+
+**Coding**：（GPU 环境可选）完成实验清单前三项；无 GPU 时用 MLX-LM server 完成"接入网关 + 三指标客户端"演练。
+
+**Debugging**：vLLM 服务吞吐随运行时间下降。排查树：prefix cache 占满（命中率/驱逐）/内存碎片/长请求堆积——各给 /metrics 判据。
+
+**Design**：为第 42 章"48GB 卡 9B FP16 并发 8"的需求写出完整 vLLM 启动命令，每个参数旁标注它对应的机制章节。
+
+**Evaluation**：设计"部署验收"清单：启动成功/评测护航通过/压测基线归档/监控接入/容量结论登记——vLLM 项目的 DONE 门禁。
+
+## 小结
+
+- **Problem**：机制学会了，落地缺一个完整的工程案例。
+- **Solution**：账本先行 → 配置即机制 → 网关零改动接入 → 规范压测定容量——全流程可复现。
+- **Trade-off**：量化 vs 精度护航；本地演练 vs GPU 实测（规律/数值分层）。
+- **Evaluation**：部署验收清单 + 实验登记——serving 也有 Review Gate。
+
+## 连接下一章
+
+单实例不是生产。最后一章：负载均衡、扩缩、缓存、故障转移、监控——把 serving 接进第 33–36 章的生产体系，Part 6 收官。
+
+## References
+
+- vLLM 文档与兼容矩阵：https://docs.vllm.ai/ — Last verified: 2026-09-10（**版本演进快：参数以部署版本文档为准**；本书实测 vllm==0.29.0）
+- 本书压测与评测护航实测：ch47-exp-001（experiments/experiment_registry.md）
+- MLX-LM server：https://github.com/ml-explore/mlx-lm — Last verified: 2026-09-09
+- 硬件规划：第 42 章账本 + Appendix D（租用指南）
+- Last verified: 2026-09-10
+
+## Mental Model Check
+
+**结构模型**：规划→部署→接入→压测四步，配置参数↔机制章节的映射。
+
+**因果模型**：max_model_len=模型上限→启动 OOM；压测流量≠生产流量→容量误判；量化未评测→精度事故。
+
+**决策模型**：账本先于租卡；每项配置说得出出处；验收清单门禁。
+
+**迁移检验**：新需求"部署一个 32B AWQ 模型"。你的启动命令（不查资料）——32×0.5=16GB 权重（INT4）+ KV 预算按 24GB 剩余 6GB→ max_model_len 4K×并发 or 8K×3（账本算）；--enable-prefix-caching（多轮）；压测计划含长度分布。**参数还没敲，账已经算完——第 42 章承诺的"租卡前算账"完全兑现。**

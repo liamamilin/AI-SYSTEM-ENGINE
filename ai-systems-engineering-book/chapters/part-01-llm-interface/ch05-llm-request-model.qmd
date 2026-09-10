@@ -1,0 +1,252 @@
+---
+title: "LLM 请求的工程模型（The Engineering Model of an LLM Request）"
+---
+
+## 本章要解决的问题
+
+来看一段几乎所有工程师都写过的代码：
+
+```python
+resp = client.chat.completions.create(
+    model="qwen3.5:9b-mlx",
+    messages=[{"role": "user", "content": question}],
+)
+```
+
+它会跑，多数时候也对。但上线后问题接踵而至：回答风格时好时坏（为什么？）；某天开始每隔十几单出现 JSON 解析失败（为什么？）；长对话用户聊到第 30 轮突然报 400 错误（为什么？）；月底账单是预估的三倍（为什么？）。
+
+这些问题没有一个是"模型不够聪明"，全部源于**对请求本身缺乏工程模型**：你调用的不是"一个函数"，而是一个有明确结构、参数各司其职、成本可精确计算的**系统接口**。temperature 不是"调调看"的旋钮，max_tokens 不是可以不看的默认值，context window 不是无限的内存。本章把一次 LLM 请求拆解成完整的工程对象，建立"参数 → 行为 → 成本 → 失败"的因果链。这是 Part 1 的地基：后续的 Prompt、结构化输出、工具调用、流式、可靠性全部构建在这个模型上。
+
+## 学习目标
+
+完成本章后，你能够：
+
+- 拆解一次请求的全部工程对象：Token、Messages、Context Window、Sampling 参数、Reasoning；
+- 说出每个参数的**因果作用**（它改变什么、不改变什么）而不是背诵默认值；
+- 用 Token 预算模型估算任意请求的成本与上下文容量；
+- 对"随机失败"类问题，先从请求模型的哪个参数查起。
+
+## 前置知识
+
+第 2 章（Model 组件）、基础 HTTP API 概念。
+
+## 问题背景
+
+模型的对外接口之所以值得单独建模，因为它有几个反直觉的性质：
+
+1. **计费与限制单位是 Token**，不是字符也不是请求次数——你付钱买的东西和你看到的东西单位不同；
+2. **上下文窗口是硬上限**，超限不是"变慢"而是直接失败；
+3. **输出长度默认受 max_tokens 约束**，超长输出不是报错而是**静默截断**——最隐蔽的失败来源；
+4. **采样是随机的**，同一请求两次结果不同——不理解的团队会把它当 bug 追查一星期。
+
+每个性质背后都有一个必须内化的机制。
+
+## 核心概念
+
+### Token：计费、限制与计算的单位
+
+模型不处理字符，处理 Token（词元）：文本被 tokenizer 切成的最小单位。英文约 1 token ≈ 0.75 词（4 字符）；中文约 1 汉字 ≈ 1–2 token（视 tokenizer 而定，不可用固定换算率估计长文本）。
+
+Token 的三个工程意义：
+
+- **计费单位**：input 与 output 分别计价，通常 output 更贵；
+- **限制单位**：context window = 输入+输出共享的总预算；
+- **延迟单位**：生成速度按 token/s 计，输入处理（prefill）也随 token 数增长（第 41 章展开机制）。
+
+工程纪律：**任何进入请求的文本都先估 token 再决策**。"这文档大概 2 万字"不是估算，是猜测。
+
+### Messages：结构化的输入协议
+
+请求体是消息列表，每个消息有 role 与内容：
+
+```text
+system     ：系统指令——设定行为（角色、规则、输出要求）
+user       ：用户输入
+assistant  ：模型历史回复（多轮对话时回传）
+tool       ：工具执行结果回注（第 8 章）
+```
+
+关键工程事实：**消息列表是你要负责维护的**。API 是无状态的——多轮对话的"记忆"来自你把历史消息原样传回去。于是历史越聊越长，成本与延迟随轮数增长，最终撞上 context window。这个"谁来管理历史"的问题就是第 24 章的 Context Management——但根子在请求模型里：**没有管理，就没有边界**。
+
+### Context Window：共享的硬预算
+
+上下文窗口是单次请求允许的最大 token 总数（输入+输出共享，不同模型从 4K 到数百万不等）。
+
+```text
+总预算 = system + 全部历史消息 + 检索内容 + 工具结果 + 本轮输入 + max_tokens(预留输出)
+```
+
+超预算的行为：多数端点返回 400 类错误，部分端点静默截断头部——两种都致命，前者报错后者**丢失信息**（你的 system 指令可能被截掉）。
+
+### Sampling：控制随机性的旋钮
+
+模型每步输出的是一个概率分布，采样参数决定"从分布里怎么挑"：
+
+- **temperature**（0–2，常配 0–1）：缩放分布。0 → 贪心/近似确定性（每步挑最高概率）；越高 → 分布越平，低概率词被选中机会越大，输出越发散。**确定性任务（抽取、分类、结构化输出）用低 temperature；创作任务用较高值**。
+- **top_p**（nucleus sampling）：只从累计概率达 p 的候选中采样，另一种约束发散度的方式。**惯例：temperature 与 top_p 不同时调**——它们操作同一个分布，同时调等于两个未知数一个方程。
+- **max_tokens**：输出上限。**达到上限的输出会被截断，且截断是静默的**——JSON 少了右括号、答案少了结论段。所有"偶发解析失败"里，这是最常见也最容易漏查的原因。
+
+因果链总结：
+
+```text
+temperature↑ → 输出多样性↑ 稳定性↓
+context 消耗↑ → 费用↑ 延迟↑（prefill 变长）→ 关键信息稀释风险↑
+max_tokens 过小 → 静默截断 → 下游解析崩溃
+历史无管理 → 消息累积 → 撞 context 上限 → 硬失败
+```
+
+### Reasoning：思考型模型的额外维度
+
+现代推理型模型（reasoning models）会在输出答案前生成内部推理段。工程影响：这些推理 token **通常也计费**、显著增加延迟，但能提升复杂推理任务的成功率。使用决策：简单任务用普通模型省时省钱；多步推理任务值得付推理 token 的成本。部分端点允许控制"思考预算"（如 `reasoning_effort` 类参数）——**这属于快速变化内容，使用前查该端点的当前文档**。
+
+### Model capabilities：能力差异也是请求模型的一部分
+
+同一份代码换模型，行为可能完全不同：上下文窗口不同、是否支持工具调用（第 8 章）、是否支持结构化输出约束、是否支持流式、推理 token 计费方式。**请求模型必须包含"当前模型的该字段支持什么"**——这就是第 11 章模型网关存在的理由之一。
+
+## 心智模型
+
+```text
+一次请求的工程账本：
+
+  [system 指令]  [历史消息]  [检索/工具内容]  [本轮输入]      [输出预留]
+      token   +   token   +     token     +     token    vs    max_tokens
+  └────────────── 共享 context window 预算 ──────────────┘
+
+  temperature/top_p → 决定输出稳定性维度
+  模型选择          → 决定能力/成本/延迟/特性支持四个维度
+```
+
+三条决策规则：
+
+1. **任何请求前先做 token 预算**：输入预算 + 输出预留 ≤ 窗口，且给历史增长留余量；
+2. **确定性任务压低 temperature；禁止 temperature 与 top_p 同时调**；
+3. **永远显式设置 max_tokens**，并假设截断会发生（下游必须能检测）。
+
+## Minimal Implementation：本地实测五组对照
+
+以下实验在本地 Ollama（`http://localhost:11434/v1`，`qwen3.5:9b-mlx`）实际运行验证过（Last verified: 2026-09-09），核心结构：
+
+```python
+import os
+from openai import OpenAI
+
+client = OpenAI(
+    base_url=os.environ.get("LLM_BASE_URL", "http://localhost:11434/v1"),
+    api_key=os.environ.get("LLM_API_KEY", "ollama"),
+)
+
+def run(prompt: str, temperature: float | None = None, max_tokens: int | None = None) -> str:
+    kwargs = {"model": os.environ.get("LLM_MODEL", "qwen3.5:9b-mlx"),
+              "messages": [{"role": "user", "content": prompt}]}
+    if temperature is not None:
+        kwargs["temperature"] = temperature
+    if max_tokens is not None:
+        kwargs["max_tokens"] = max_tokens
+    return client.chat.completions.create(**kwargs).choices[0].message.content
+```
+
+**实验 1：temperature 对照（已实测）**。同一 prompt 各跑 5 次：`temperature=0` → 5 次输出完全相同（"打破时空限制，兼顾效率与自由。"×5）；`temperature=1.0` → 5 次输出全部不同（5 种措辞各异的点评）。**结论：稳定性由采样参数控制，与模型能力无关。**
+
+**实验 2：静默截断（已实测，附带一个重要意外发现）**。`run("写一段500字的产品介绍", max_tokens=30)`：返回 `finish_reason="length"`，但**内容为空字符串**——0 个字，钱照付（completion_tokens=30）。原因见下方"推理 token 实测"。
+
+**实验 3：历史累积**：多轮追加历史，延迟与 token 逐轮上升（趋势稳定复现，绝对数值依机器而异）。
+
+**实验 4：system 角色约束力（已实测）**。同一 user 输入，无 system 时输出散文推荐；加 system（`你只输出 JSON...`）后输出 `{"activity": "户外徒步探索城市周边自然景观"}`——严格 JSON。**结论：system 的行为约束力最强**（第 6 章 Instruction Hierarchy 的实证基础）。
+
+### 推理 token 实测：一个会"吞掉"预算的隐藏机制
+
+`qwen3.5:9b` 是**推理型模型**：回答前先生成内部思考段。实测揭示的工程事实：
+
+- 思考段**计入 completion_tokens**（消耗你的 max_tokens 预算与费用）；
+- 经 OpenAI-compatible 端点调用时，思考内容**不出现在返回值里**——你看到的是"空内容 + finish_reason=length"；
+- 用 Ollama 原生 API（`/api/chat`）可观察到思考段（`thinking` 字段，实测约 800 字符），并用 `think: false` 显式关闭。
+
+关闭思考后的对照实测：同样 `max_tokens=30` 的 500 字介绍请求，正常输出 53 字后被截断（`done_reason="length"`）——**截断本身依然静默**。
+
+> **Current Implementation Note**（Last verified: 2026-09-09）：
+> 1. 推理型模型的思考行为、是否可通过参数关闭（如 Ollama 的 `think`、其他端点的 `reasoning_effort` 类参数）、思考内容是否计费，各端点差异极大且快速变化，使用前必须查该端点当前文档；
+> 2. "空内容 + finish_reason=length"在推理型模型上是常见症状，排查顺序：先怀疑思考吞预算，再怀疑任务本身；
+> 3. 确定性任务（抽取/分类/结构化输出）建议显式关闭思考：省 token、省延迟、行为更稳。
+
+## 暴露问题：Version 0 在哪里失败
+
+把最小请求代码直接上线，对照第 2 章的失败映射表：
+
+- 无 token 预算检查 → 多轮对话第 N 轮撞窗口，400 硬失败；
+- 无 max_tokens 显式设置 → 长答案静默截断，下游 JSON 解析随机崩；
+- temperature 默认值 → 结构化抽取任务输出字段值抖动；
+- 无 finish_reason 检查 → 截断与完整输出在调用方无法区分。
+
+**本章不修**（它们分别属于第 10 章可靠性与第 24 章上下文管理），但你现在能说出每个失败从哪个参数查起——这就是请求模型的价值。
+
+## Failure Cases
+
+**案例一：每天下午的"随机"崩溃。** 某摘要服务用默认参数，用户长文档偶尔触发 `finish_reason="length"`，摘要被截断后下游正则匹配不到结尾标记而报错。排查三天无果，因为错误只在"文档够长"时出现。修复：显式 max_tokens + finish_reason 检查 + 预算前置校验。根因层：请求模型缺失。
+
+**案例一 B：空回复事故（本书实测案例）。** 作者在准备本章实验时就撞上了真实版本：把 `qwen3.5:9b` 接进服务后，偶发"返回空字符串但计费正常"。排查路径：非截断问题 → 非限流 → 最终用原生 API 抓包才发现是**思考段吞掉了全部输出预算**。这个案例的价值在于：如果团队里没人知道"推理 token"这个机制，这个问题可以耗掉一周——而有了请求模型，它应该在五分钟内被归因到"输出预算被隐藏消耗"。
+
+**案例二：三倍的账单。** 多轮客服对话把全部历史无限回传，90 天后平均单请求成本涨到上线时的三倍——不是模型变贵，是历史变长。修复：上下文管理（第 24 章）。教训：**成本曲线应该每周看，而不是月账单出来才看。**
+
+**案例三：复现不了的 bug。** 测试报"模型把'是'答成'否'"，开发者重跑十次无法复现，差点当作 flaky test 删掉。真相：temperature 默认值 > 0，边界样本在分布两端。修复：确定性测试用 temperature=0。教训：**测试与评测必须在固定采样条件下运行**（这个原则在第 17 章复现规范里制度化）。
+
+## Trade-offs
+
+- **temperature=0 vs 采样多样性**：压低采样提升稳定性但可能陷入重复模式；创作与头脑风暴场景需要发散。按任务类型选，不全局一刀切。
+- **长上下文 vs 成本延迟**：塞更多上下文通常提升质量到某一点，之后收益递减而成本线性上升（第 27 章的"上下文预算"决策）。"全塞进去"永远是最贵的默认选项。
+- **推理模型 vs 普通模型**：推理 token 买成功率，付的是延迟与费用。分类、抽取等任务多数不需要。
+
+## Production Considerations
+
+- **参数即配置**：采样参数、模型名、窗口上限、思考开关全部进配置（第 11 章网关），禁止散落硬编码；
+- **预算守卫前置**：请求前估算 token（本地 tokenizer 或估算函数），超预算走压缩/截断/拒绝路径，而不是等服务端报错；
+- **finish_reason 是一等公民**：所有下游消费者必须在解析前检查它；
+- **推理开关按任务设置**：确定性任务（抽取/分类/结构化输出）显式关闭思考；复杂多步推理再开启——开启意味着计费增加一个维度；
+- **成本观测从第一天开始**：每次调用记录 input/output token（jsonl 即可，第 36 章升级为指标体系）。
+
+## Evaluation
+
+本章有效性判据：
+
+1. **参数-效果预测测试**：给出 5 组"参数变更→行为预测"题（如 temperature 0→1 对抽取任务的影响），先预测后实测验证；
+2. **Token 估算校准**：对自己的中文文本估算 token 误差 <20%（先用 tokenizer 校准一次）；
+3. **失败归因**：给定"偶发解析失败"症状，能按"截断→采样→历史累积"顺序排查。
+
+## Exercises
+
+**Concept**：为什么"temperature 与 top_p 不要同时调"？用概率分布的语言一句话说清。
+
+**Coding**：写 `estimate_cost(messages, model_price) -> float` 函数：tokenizer 计数（或查表估算）+ 双价计费。用 10 条真实请求校验你的估算与端点返回的 usage 字段差 <10%。
+
+**Debugging**：服务报"JSON 解析失败"每小时 2–5 次，错误样本里 JSON 都缺尾部。按本章因果链给出排查顺序与每个环节的检查动作。
+
+**Design**：多轮对话产品（预计单会话 40 轮），设计你的 token 预算策略：每轮预算多少、何时开始压缩历史、压缩失败怎么办。
+
+**Evaluation**：设计一个 10 分钟的实验验证"system 指令的约束力强于 user 消息内指令"，给出可测量的判据。
+
+## 小结
+
+- **Problem**：请求参数被当玄学，随机失败无从排查。
+- **Solution**：请求工程模型——Token（计费/限制/延迟单位）、Messages（无状态协议，历史自管）、Context Window（共享硬预算）、Sampling（温度/截断的因果作用）、Reasoning（推理 token 经济学）。
+- **Trade-off**：稳定性 vs 多样性；上下文 vs 成本；推理能力 vs 延迟费用。
+- **Evaluation**：参数-效果预测 + token 估算校准 + 失败归因序列。
+
+## 连接下一章
+
+请求模型中最有杠杆的输入是 system 指令——实验 4 已经演示了它的约束力。下一章系统性地讲如何组织指令：为什么 Prompt 时好时坏、指令层次如何建立、模板如何工程化。从"会调参数"到"会组织上下文"，是 Prompt Engineering 的真正含义。
+
+## References
+
+- OpenAI API Reference（chat.completions 参数语义）：https://platform.openai.com/docs/api-reference — Last verified: 2026-09-09
+- Ollama OpenAI-compatible API：https://github.com/ollama/ollama/blob/main/docs/openai.md — Last verified: 2026-09-09
+- Tokenizer 机制与计数（OpenAI cookbook）：https://github.com/openai/openai-cookbook — Last verified: 2026-09-09
+- 快速变化参数（reasoning token 控制、各端点参数支持差异）：以各端点当前官方文档为准，正文中以 Current Implementation Note 标注。
+
+## Mental Model Check
+
+**结构模型**：一次请求 = token 预算账本（五项共享一个窗口）+ 采样旋钮（稳定性维度）+ 模型选择（能力/成本/延迟/特性四维度）。
+
+**因果模型**：四条因果链（temperature→稳定性；context→费用/延迟/稀释；max_tokens→静默截断；历史累积→硬失败）——排查任何请求层问题先走这四条。
+
+**决策模型**：预算前置、确定性任务低温、显式 max_tokens、finish_reason 必查。
+
+**迁移检验**：新模型"XYZ-3"发布，窗口 200K，支持推理模式。你不查任何教程，能推出哪些工程结论？——窗口变大不改变预算纪律（仍有硬上限与稀释风险）；推理模式意味着计费增加一个 token 维度（先看定价再启用）；特性支持要实测（工具调用/结构化输出不能假设）。**请求模型是模型无关的——这正是"先稳定抽象"的含义。**
