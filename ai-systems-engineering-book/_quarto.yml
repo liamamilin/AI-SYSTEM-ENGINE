@@ -1,6 +1,7 @@
+site-url: https://liamamilin.github.io/AI-SYSTEM-ENGINE/
+
 project:
   type: book
-  site-url: https://liamamilin.github.io/AI-SYSTEM-ENGINE/
   output-dir: _book
 
 book:
