@@ -25,3 +25,15 @@ nohup.out
 
 # 冗余归档（内容与目录重复）
 *.zip
+
+# Quarto 构建索引（CI 内自动重建）
+.quarto/
+
+# 写作过程文档（不随书籍发布）
+ai-systems-engineering-book/content.md
+ai-systems-engineering-book/STATUS.md
+ai-systems-engineering-book/CHANGELOG.md
+ai-systems-engineering-book/book-principles.md
+ai-systems-engineering-book/REFERENCES.md
+ai-systems-engineering-book/experiments/chapter-plans/
+ai_systems_engineering_book_agent_pack/
