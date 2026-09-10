@@ -11,32 +11,22 @@
 ai-systems-engineering-book/
 ├── _quarto.yml          # Quarto 书籍配置（60 章 + 附录 A-H）
 ├── index.qmd            # 前言
-├── content.md           # 写作蓝图（每章 goal / reader_problem / expected_output）
-├── book-principles.md   # 本书特化写作原则
-├── engineering-standard.md  # 统一 Python 工程规范
-├── GLOSSARY.md          # 稳定术语表（防 concept drift）
-├── REFERENCES.md        # 引用索引
-├── STATUS.md            # 每章状态（PLANNED→…→DONE）
-├── CHANGELOG.md         # 结构与定义变更记录
+├── engineering-standard.md  # 统一 Python 工程规范（附录 A 引用）
+├── GLOSSARY.md          # 稳定术语表（防 concept drift，附录 G 以此自动生成）
 ├── chapters/            # 章节正文（.qmd，part-00 … part-08 + appendix）
-├── code/                # 章节代码项目（与章节一一对应）
+├── code/                # 章节代码项目（与章节一一对应，tests 全部可运行）
 ├── evals/               # 共享评测设施
 ├── datasets/            # 样例数据
-├── experiments/         # 章节计划、实验登记、结果
+├── experiments/         # 实验登记表（13 条可复现记录）+ GPU 实测结果归档
 ├── diagrams/ exercises/ solutions/ scripts/
 └── references.bib
 ```
 
-## 规范来源
-
-本书全部写作规范位于 `../ai_systems_engineering_book_agent_pack/`：
-BOOK_SPEC / TOC / WRITING_GUIDE / KNOWLEDGE_CONTRACT / CODE_STANDARD / CHAPTER_TEMPLATE / REVIEW_CHECKLIST / PROJECT_STRUCTURE / AGENT。
-
 ## 当前状态
 
-- Bootstrap 完成（2026-09-09），详见 CHANGELOG.md
-- 全部章节 PLANNED；章节计划已完成 Part 0（Ch1-4）+ Part 1（Ch5-11）
-- 下一步：逐章写作循环（Research → Design → Code → Test → Eval → Draft → Review → DONE）
+- 全书 60 章 + 附录 8 全部完成（Last verified: 2026-09-10）
+- 9 个代码项目实测（162 测试通过）+ 13 条实验登记（vLLM 压测 / QLoRA / DPO / 蒸馏等）
+- 在线书籍：https://liamamilin.github.io/AI-SYSTEM-ENGINE/（push 即自动发布）
 
 ## 运行环境
 
